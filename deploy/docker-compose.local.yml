@@ -24,7 +24,7 @@ services:
   # Sub2API Application
   # ===========================================================================
   sub2api:
-    image: weishaw/sub2api:latest
+    image: sub2api:latest
     container_name: sub2api
     restart: unless-stopped
     ulimits:
@@ -250,6 +250,20 @@ services:
       retries: 5
       start_period: 5s
 
+  caddy:
+    image: caddy:alpine
+    container_name: sub2api-caddy
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /usr/local/modelcube/deploy/ssl:/etc/caddy/ssl:ro
+    depends_on:
+      - sub2api
+    networks:
+      - sub2api-network
 # =============================================================================
 # Networks
 # =============================================================================
