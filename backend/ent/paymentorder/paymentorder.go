@@ -30,6 +30,20 @@ const (
 	FieldFeeRate = "fee_rate"
 	// FieldRechargeCode holds the string denoting the recharge_code field in the database.
 	FieldRechargeCode = "recharge_code"
+	// FieldRechargePackageID holds the string denoting the recharge_package_id field in the database.
+	FieldRechargePackageID = "recharge_package_id"
+	// FieldBaseAmount holds the string denoting the base_amount field in the database.
+	FieldBaseAmount = "base_amount"
+	// FieldPermanentCreditAmount holds the string denoting the permanent_credit_amount field in the database.
+	FieldPermanentCreditAmount = "permanent_credit_amount"
+	// FieldBonusAmount holds the string denoting the bonus_amount field in the database.
+	FieldBonusAmount = "bonus_amount"
+	// FieldBonusValidityDays holds the string denoting the bonus_validity_days field in the database.
+	FieldBonusValidityDays = "bonus_validity_days"
+	// FieldBonusExpiresAt holds the string denoting the bonus_expires_at field in the database.
+	FieldBonusExpiresAt = "bonus_expires_at"
+	// FieldRechargePackageSnapshot holds the string denoting the recharge_package_snapshot field in the database.
+	FieldRechargePackageSnapshot = "recharge_package_snapshot"
 	// FieldOutTradeNo holds the string denoting the out_trade_no field in the database.
 	FieldOutTradeNo = "out_trade_no"
 	// FieldPaymentType holds the string denoting the payment_type field in the database.
@@ -116,6 +130,13 @@ var Columns = []string{
 	FieldPayAmount,
 	FieldFeeRate,
 	FieldRechargeCode,
+	FieldRechargePackageID,
+	FieldBaseAmount,
+	FieldPermanentCreditAmount,
+	FieldBonusAmount,
+	FieldBonusValidityDays,
+	FieldBonusExpiresAt,
+	FieldRechargePackageSnapshot,
 	FieldOutTradeNo,
 	FieldPaymentType,
 	FieldPaymentTradeNo,
@@ -168,6 +189,12 @@ var (
 	DefaultFeeRate float64
 	// RechargeCodeValidator is a validator for the "recharge_code" field. It is called by the builders before save.
 	RechargeCodeValidator func(string) error
+	// RechargePackageIDValidator is a validator for the "recharge_package_id" field. It is called by the builders before save.
+	RechargePackageIDValidator func(string) error
+	// DefaultBonusAmount holds the default value on creation for the "bonus_amount" field.
+	DefaultBonusAmount float64
+	// DefaultBonusValidityDays holds the default value on creation for the "bonus_validity_days" field.
+	DefaultBonusValidityDays int
 	// DefaultOutTradeNo holds the default value on creation for the "out_trade_no" field.
 	DefaultOutTradeNo string
 	// OutTradeNoValidator is a validator for the "out_trade_no" field. It is called by the builders before save.
@@ -252,6 +279,36 @@ func ByFeeRate(opts ...sql.OrderTermOption) OrderOption {
 // ByRechargeCode orders the results by the recharge_code field.
 func ByRechargeCode(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRechargeCode, opts...).ToFunc()
+}
+
+// ByRechargePackageID orders the results by the recharge_package_id field.
+func ByRechargePackageID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRechargePackageID, opts...).ToFunc()
+}
+
+// ByBaseAmount orders the results by the base_amount field.
+func ByBaseAmount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBaseAmount, opts...).ToFunc()
+}
+
+// ByPermanentCreditAmount orders the results by the permanent_credit_amount field.
+func ByPermanentCreditAmount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPermanentCreditAmount, opts...).ToFunc()
+}
+
+// ByBonusAmount orders the results by the bonus_amount field.
+func ByBonusAmount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBonusAmount, opts...).ToFunc()
+}
+
+// ByBonusValidityDays orders the results by the bonus_validity_days field.
+func ByBonusValidityDays(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBonusValidityDays, opts...).ToFunc()
+}
+
+// ByBonusExpiresAt orders the results by the bonus_expires_at field.
+func ByBonusExpiresAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBonusExpiresAt, opts...).ToFunc()
 }
 
 // ByOutTradeNo orders the results by the out_trade_no field.

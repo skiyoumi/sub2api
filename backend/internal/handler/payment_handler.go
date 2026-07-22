@@ -95,9 +95,18 @@ func (h *PaymentHandler) GetPlans(c *gin.Context) {
 // GET /api/v1/payment/checkout-info
 func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 	ctx := c.Request.Context()
+	subject, ok := requireAuth(c)
+	if !ok {
+		return
+	}
 
 	// Fetch limits (methods + global range)
 	limitsResp, err := h.configService.GetAvailableMethodLimits(ctx)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	bonusSummary, err := h.paymentService.GetBonusWalletSummary(ctx, subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -145,6 +154,11 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 		HelpImageURL:              cfg.HelpImageURL,
 		StripePublishableKey:      cfg.StripePublishableKey,
 		AlipayForceQRCode:         cfg.AlipayForceQRCode,
+		RechargePackagesEnabled:   cfg.RechargePackagesEnabled,
+		AllowCustomAmount:         cfg.AllowCustomRecharge,
+		RechargePackages:          enabledCheckoutRechargePackages(cfg.RechargePackages),
+		BonusBalance:              bonusSummary.Balance.InexactFloat64(),
+		NearestBonusExpiry:        bonusSummary.NearestExpiry,
 	})
 }
 
@@ -161,6 +175,37 @@ type checkoutInfoResponse struct {
 	HelpImageURL              string                          `json:"help_image_url"`
 	StripePublishableKey      string                          `json:"stripe_publishable_key"`
 	AlipayForceQRCode         bool                            `json:"alipay_force_qrcode"`
+	RechargePackagesEnabled   bool                            `json:"recharge_packages_enabled"`
+	AllowCustomAmount         bool                            `json:"allow_custom_amount"`
+	RechargePackages          []checkoutRechargePackage       `json:"recharge_packages"`
+	BonusBalance              float64                          `json:"bonus_balance"`
+	NearestBonusExpiry        *time.Time                       `json:"nearest_bonus_expiry"`
+}
+
+type checkoutRechargePackage struct {
+	ID                string  `json:"id"`
+	Amount            float64 `json:"amount"`
+	BonusAmount       float64 `json:"bonus_amount"`
+	BonusValidityDays int     `json:"bonus_validity_days"`
+	Recommended       bool    `json:"recommended"`
+	SortOrder         int     `json:"sort_order"`
+}
+
+func enabledCheckoutRechargePackages(packages []service.RechargePackage) []checkoutRechargePackage {
+	result := make([]checkoutRechargePackage, 0, len(packages))
+	for _, p := range packages {
+		if !p.Enabled {
+			continue
+		}
+		amount, _ := strconv.ParseFloat(p.Amount, 64)
+		bonus, _ := strconv.ParseFloat(p.BonusAmount, 64)
+		result = append(result, checkoutRechargePackage{
+			ID: p.ID, Amount: amount, BonusAmount: bonus,
+			BonusValidityDays: p.BonusValidityDays,
+			Recommended: p.Recommended, SortOrder: p.SortOrder,
+		})
+	}
+	return result
 }
 
 type checkoutPlan struct {
@@ -226,6 +271,8 @@ type CreateOrderRequest struct {
 	PaymentSource     string  `json:"payment_source"`
 	OrderType         string  `json:"order_type"`
 	PlanID            int64   `json:"plan_id"`
+	RechargePackageID string  `json:"recharge_package_id"`
+	RechargePackageHash string `json:"-"`
 	// IsMobile lets the frontend declare its mobile status directly. When
 	// nil we fall back to User-Agent heuristics (which miss iPadOS / some
 	// embedded browsers that strip the "Mobile" keyword).
@@ -275,6 +322,8 @@ func (h *PaymentHandler) CreateOrder(c *gin.Context) {
 		PaymentSource:   req.PaymentSource,
 		OrderType:       req.OrderType,
 		PlanID:          req.PlanID,
+		RechargePackageID: req.RechargePackageID,
+		RechargePackageHash: req.RechargePackageHash,
 		Locale:          c.GetHeader("Accept-Language"),
 	})
 	if err != nil {
@@ -318,6 +367,12 @@ func applyWeChatPaymentResumeClaims(req *CreateOrderRequest, claims *service.WeC
 	}
 	if claims.PlanID > 0 {
 		req.PlanID = claims.PlanID
+	}
+	if claims.RechargePackageID != "" {
+		req.RechargePackageID = claims.RechargePackageID
+	}
+	if claims.RechargePackageHash != "" {
+		req.RechargePackageHash = claims.RechargePackageHash
 	}
 	return nil
 }

@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="mx-auto max-w-4xl space-y-6">
+    <div class="mx-auto space-y-6" :class="activeTab === 'recharge' && paymentPhase === 'select' ? 'max-w-7xl' : 'max-w-4xl'">
       <div v-if="loading" class="flex items-center justify-center py-20">
         <div class="h-8 w-8 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"></div>
       </div>
@@ -31,63 +31,176 @@
         <template v-else>
           <!-- Top-up Tab -->
           <template v-if="activeTab === 'recharge'">
-            <!-- Recharge Account Card -->
-            <div class="card p-5">
-              <p class="text-xs font-medium text-gray-400 dark:text-gray-500">{{ t('payment.rechargeAccount') }}</p>
-              <p class="mt-1 text-base font-semibold text-gray-900 dark:text-white">{{ user?.username || '' }}</p>
-              <p class="mt-0.5 text-sm font-medium text-green-600 dark:text-green-400">{{ t('payment.currentBalance') }}: {{ user?.balance?.toFixed(2) || '0.00' }}</p>
-            </div>
             <div v-if="enabledMethods.length === 0" class="card py-16 text-center">
               <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
             </div>
-            <template v-else>
-            <div class="card p-6">
-              <AmountInput
-                v-model="amount"
-                :amounts="[10, 20, 50, 100, 200, 500, 1000, 2000, 5000]"
-                :min="globalMinAmount"
-                :max="globalMaxAmount"
-              />
-              <p v-if="amountError" class="mt-2 text-xs text-amber-600 dark:text-amber-300">{{ amountError }}</p>
-            </div>
-            <div v-if="enabledMethods.length >= 1" class="card p-6">
-              <PaymentMethodSelector
-                :methods="methodOptions"
-                :selected="selectedMethod"
-                @select="selectedMethod = $event"
-              />
-            </div>
-            <div v-if="validAmount > 0" class="card p-6">
-              <div class="space-y-2 text-sm">
-                <div class="flex justify-between">
-                  <span class="text-gray-500 dark:text-gray-400">{{ t('payment.paymentAmount') }}</span>
-                  <span class="text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(validAmount) }}</span>
+            <div v-else class="recharge-checkout-shell">
+              <header class="recharge-cashier-header">
+                <div class="flex min-w-0 items-center gap-3">
+                  <span class="recharge-cashier-icon"><Icon name="creditCard" size="md" /></span>
+                  <div class="min-w-0">
+                    <h1>{{ t('payment.rechargePackages.cashierTitle') }}</h1>
+                    <p>{{ t('payment.rechargePackages.cashierSubtitle') }}</p>
+                  </div>
                 </div>
-                <div v-if="feeRate > 0" class="flex justify-between">
-                  <span class="text-gray-500 dark:text-gray-400">{{ t('payment.fee') }} ({{ feeRate }}%)</span>
-                  <span class="text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(feeAmount) }}</span>
+                <span class="recharge-security-badge">
+                  <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+                  {{ t('payment.rechargePackages.encrypted') }}
+                </span>
+              </header>
+
+              <div class="recharge-workspace grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+                <div class="space-y-5">
+                <section class="recharge-panel">
+                  <div class="recharge-step-header">
+                    <span class="recharge-step-number">1</span>
+                    <div>
+                      <h2>{{ t('payment.rechargePackages.chooseAmount') }}</h2>
+                      <p>{{ t('payment.rechargePackages.chooseAmountHint') }}</p>
+                    </div>
+                    <span v-if="globalMaxAmount > 0" class="ml-auto hidden rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 sm:block">
+                      {{ t('payment.rechargePackages.maximum', { amount: formatSelectedPaymentAmount(globalMaxAmount) }) }}
+                    </span>
+                  </div>
+
+                  <div v-if="checkout.recharge_packages_enabled && rechargePackages.length" class="mt-6">
+                    <div class="mb-3 flex items-center justify-between gap-4">
+                      <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ t('payment.rechargePackages.title') }}</p>
+                      <button v-if="checkout.allow_custom_amount" class="text-xs font-medium text-primary-600 hover:underline dark:text-primary-400" @click="clearRechargePackage">
+                        {{ t('payment.rechargePackages.custom') }}
+                      </button>
+                    </div>
+                    <div v-if="hasBonusPackages" class="recharge-bonus-notice">
+                      <Icon name="infoCircle" size="sm" class="mt-0.5 shrink-0" />
+                      <div>
+                        <p class="font-semibold">{{ t('payment.rechargePackages.bonusPolicyTitle') }}</p>
+                        <p class="mt-0.5">{{ t('payment.rechargePackages.bonusPolicyDescription') }}</p>
+                      </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4" role="radiogroup" :aria-label="t('payment.rechargePackages.title')">
+                      <button v-for="pkg in rechargePackages" :key="pkg.id" type="button" role="radio" :aria-checked="selectedRechargePackageId === pkg.id"
+                        class="recharge-package-card group"
+                        :class="selectedRechargePackageId === pkg.id ? 'is-selected' : ''"
+                        @click="selectRechargePackage(pkg)">
+                        <span v-if="pkg.recommended" class="recharge-recommended">{{ t('payment.rechargePackages.recommended') }}</span>
+                        <span class="flex items-baseline gap-1 text-gray-950 dark:text-white">
+                          <span class="text-sm font-semibold text-gray-500 dark:text-gray-400">{{ selectedCurrencySymbol }}</span>
+                          <span class="text-3xl font-bold leading-none">{{ formatPackageFaceAmount(pkg.amount) }}</span>
+                        </span>
+                        <span class="mt-2 block text-xs text-gray-400 dark:text-gray-500">{{ t('payment.rechargePackages.officialCredit') }}</span>
+                        <span v-if="pkg.bonus_amount > 0" class="recharge-bonus-pill">
+                          <Icon name="gift" size="xs" />
+                          {{ t('payment.rechargePackages.bonus', { amount: `${selectedCurrencySymbol}${formatPackageFaceAmount(pkg.bonus_amount)}`, days: pkg.bonus_validity_days }) }}
+                        </span>
+                        <span v-else class="mt-4 inline-flex rounded-full bg-gray-100 px-2 py-1 text-[11px] text-gray-500 dark:bg-dark-700 dark:text-gray-400">
+                          {{ t('payment.rechargePackages.instantCredit') }}
+                        </span>
+                        <span v-if="selectedRechargePackageId === pkg.id" class="recharge-selected-check">✓</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div v-if="!checkout.recharge_packages_enabled || !selectedRechargePackageId" class="mt-5">
+                    <AmountInput v-model="amount" :amounts="[10, 20, 50, 100, 200, 500, 1000, 2000, 5000]" :min="globalMinAmount" :max="globalMaxAmount" />
+                  </div>
+                  <p v-if="amountError" class="mt-3 text-xs text-amber-600 dark:text-amber-300">{{ amountError }}</p>
+                </section>
+
+                <section class="recharge-panel">
+                  <div class="recharge-step-header">
+                    <span class="recharge-step-number">2</span>
+                    <div>
+                      <h2>{{ t('payment.rechargePackages.chooseMethod') }}</h2>
+                      <p>{{ t('payment.rechargePackages.chooseMethodHint') }}</p>
+                    </div>
+                  </div>
+                  <div class="mt-6">
+                    <PaymentMethodSelector :methods="methodOptions" :selected="selectedMethod" @select="selectedMethod = $event" />
+                  </div>
+                </section>
                 </div>
-                <div v-if="feeRate > 0" class="flex justify-between border-t border-gray-200 pt-2 dark:border-dark-600">
-                  <span class="font-medium text-gray-700 dark:text-gray-300">{{ t('payment.actualPay') }}</span>
-                  <span class="text-lg font-bold text-primary-600 dark:text-primary-400">{{ formatSelectedPaymentAmount(totalAmount) }}</span>
-                </div>
-                <div v-if="balanceRechargeMultiplier !== 1" class="flex justify-between" :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': feeRate <= 0 }">
-                  <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
-                  <span class="text-gray-900 dark:text-white">${{ creditedAmount.toFixed(2) }}</span>
-                </div>
-                <p v-if="balanceRechargeMultiplier !== 1" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
-                  {{ t('payment.rechargeRatePreview', { usd: balanceRechargeMultiplier.toFixed(2) }) }}
-                </p>
+
+                <aside class="space-y-5 lg:sticky lg:top-20">
+                <section class="recharge-summary-panel">
+                  <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('payment.actualPay') }}</p>
+                  <p class="mt-2 text-5xl font-bold text-primary-600 dark:text-primary-400">{{ formatSelectedPaymentAmount(totalAmount) }}</p>
+                  <div class="mt-7 space-y-3 border-t border-gray-100 pt-5 text-sm dark:border-dark-700">
+                    <div class="flex justify-between gap-4">
+                      <span class="text-gray-500 dark:text-gray-400">{{ t('payment.paymentAmount') }}</span>
+                      <span class="font-medium text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(validAmount) }}</span>
+                    </div>
+                    <div v-if="feeRate > 0" class="flex justify-between gap-4">
+                      <span class="text-gray-500 dark:text-gray-400">{{ t('payment.fee') }} ({{ feeRate }}%)</span>
+                      <span class="font-medium text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(feeAmount) }}</span>
+                    </div>
+                    <div class="flex justify-between gap-4">
+                      <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
+                      <span class="font-semibold text-emerald-600 dark:text-emerald-400">${{ creditedAmount.toFixed(2) }}</span>
+                    </div>
+                  </div>
+                  <button :class="['btn mt-6 hidden w-full py-3 text-base font-semibold lg:flex', paymentButtonClass]" :disabled="!canSubmit || submitting" @click="handleSubmitRecharge">
+                    <span v-if="submitting" class="flex items-center justify-center gap-2">
+                      <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
+                      {{ t('common.processing') }}
+                    </span>
+                    <span v-else>{{ t('payment.rechargePackages.confirmPay', { amount: formatSelectedPaymentAmount(totalAmount) }) }}</span>
+                  </button>
+                </section>
+
+                <section class="recharge-account-panel">
+                  <div class="mb-5 flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 dark:bg-dark-700"><Icon name="user" size="sm" /></span>
+                    <span>{{ t('payment.rechargeAccount') }}</span>
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-800">
+                      <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.currentBalance') }}</p>
+                      <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">{{ (user?.balance || 0).toFixed(2) }}</p>
+                    </div>
+                    <div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-950/30">
+                      <p class="text-xs text-primary-600 dark:text-primary-400">{{ t('payment.rechargePackages.balanceAfter') }}</p>
+                      <p class="mt-1 text-lg font-bold text-primary-700 dark:text-primary-300">{{ estimatedBalance.toFixed(2) }}</p>
+                    </div>
+                  </div>
+                  <p v-if="(checkout.bonus_balance || 0) > 0" class="mt-3 text-xs text-amber-600 dark:text-amber-300">
+                    {{ t('payment.rechargePackages.currentBonus', { amount: checkout.bonus_balance?.toFixed(2) }) }}
+                  </p>
+                </section>
+
+                <section v-if="checkout.help_text || checkout.help_image_url || supportContact" class="recharge-help-panel">
+                  <div class="flex gap-3">
+                    <Icon name="infoCircle" size="sm" class="mt-0.5 shrink-0 text-amber-600" />
+                    <div class="min-w-0">
+                      <p class="font-semibold text-amber-900 dark:text-amber-200">{{ t('payment.rechargePackages.helpTitle') }}</p>
+                      <p v-if="checkout.help_text" class="mt-2 text-sm leading-6 text-amber-800/80 dark:text-amber-300/80">{{ checkout.help_text }}</p>
+                    </div>
+                  </div>
+                  <img v-if="checkout.help_image_url" :src="checkout.help_image_url" alt="" class="mx-auto mt-4 max-h-36 max-w-full cursor-pointer rounded-lg object-contain" @click="previewImage = checkout.help_image_url" />
+                  <button v-if="supportContact" type="button" class="recharge-contact-button" @click="copySupportContact">
+                    <Icon name="copy" size="sm" />
+                    {{ t('payment.rechargePackages.contactService') }}
+                  </button>
+                </section>
+                </aside>
               </div>
             </div>
-            <button :class="['btn w-full py-3 text-base font-medium', paymentButtonClass]" :disabled="!canSubmit || submitting" @click="handleSubmitRecharge">
-              <span v-if="submitting" class="flex items-center justify-center gap-2">
-                <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
-                {{ t('common.processing') }}
-              </span>
-              <span v-else>{{ t('payment.createOrder') }} {{ formatSelectedPaymentAmount(totalAmount) }}</span>
-            </button>
-            </template>
+
+            <footer v-if="enabledMethods.length > 0" class="recharge-risk-footer">
+              <Icon name="shield" size="sm" class="shrink-0 text-gray-400 dark:text-gray-500" />
+              <p>{{ t('payment.rechargePackages.riskNotice') }}</p>
+            </footer>
+
+            <div v-if="enabledMethods.length > 0" class="fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white/95 p-3 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur dark:border-dark-700 dark:bg-dark-900/95 lg:hidden">
+              <div class="mx-auto flex max-w-7xl items-center gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.actualPay') }}</p>
+                  <p class="truncate text-xl font-bold text-primary-600 dark:text-primary-400">{{ formatSelectedPaymentAmount(totalAmount) }}</p>
+                </div>
+                <button :class="['btn min-w-[160px] px-5 py-3 font-semibold', paymentButtonClass]" :disabled="!canSubmit || submitting" @click="handleSubmitRecharge">
+                  {{ submitting ? t('common.processing') : t('payment.rechargePackages.confirmPayShort') }}
+                </button>
+              </div>
+            </div>
           </template>
           <!-- Subscribe Tab -->
           <template v-else-if="activeTab === 'subscription'">
@@ -213,7 +326,7 @@
             </template>
           </template>
         </template>
-        <div v-if="(checkout.help_text || checkout.help_image_url) && paymentPhase === 'select' && !selectedPlan" class="card p-4">
+        <div v-if="(checkout.help_text || checkout.help_image_url) && paymentPhase === 'select' && !selectedPlan && activeTab !== 'recharge'" class="card p-4">
           <div class="flex flex-col items-center gap-3">
             <img v-if="checkout.help_image_url" :src="checkout.help_image_url" alt=""
               class="h-40 max-w-full cursor-pointer rounded-lg object-contain transition-opacity hover:opacity-80"
@@ -263,7 +376,7 @@ import { paymentAPI } from '@/api/payment'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel, type PeakRateFields } from '@/utils/peak-rate'
-import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
+import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType, RechargePackage } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AmountInput from '@/components/payment/AmountInput.vue'
 import PaymentMethodSelector from '@/components/payment/PaymentMethodSelector.vue'
@@ -283,6 +396,7 @@ import { platformAccentBarClass, platformBadgeLightClass, platformBadgeClass, pl
 import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
 import PaymentStatusPanel from '@/components/payment/PaymentStatusPanel.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { useClipboard } from '@/composables/useClipboard'
 import { DEFAULT_PAYMENT_CURRENCY, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import { planValiditySuffix as validitySuffixOf } from '@/components/payment/validity'
 import type { PaymentMethodOption } from '@/components/payment/PaymentMethodSelector.vue'
@@ -297,9 +411,16 @@ const authStore = useAuthStore()
 const paymentStore = usePaymentStore()
 const subscriptionStore = useSubscriptionStore()
 const appStore = useAppStore()
+const { copyToClipboard } = useClipboard()
 
 const user = computed(() => authStore.user)
+const supportContact = computed(() => (appStore.contactInfo || '').trim())
 const activeSubscriptions = computed(() => subscriptionStore.activeSubscriptions)
+
+function copySupportContact() {
+  if (!supportContact.value) return
+  void copyToClipboard(supportContact.value, t('common.copiedToClipboard'))
+}
 
 function getDaysRemaining(expiresAt: string): number {
   const diff = new Date(expiresAt).getTime() - Date.now()
@@ -320,6 +441,7 @@ const errorMessage = ref('')
 const errorHintMessage = ref('')
 const activeTab = ref<'recharge' | 'subscription'>('recharge')
 const amount = ref<number | null>(null)
+const selectedRechargePackageId = ref('')
 const selectedMethod = ref('')
 const selectedPlan = ref<SubscriptionPlan | null>(null)
 const previewImage = ref('')
@@ -332,6 +454,7 @@ interface CreateOrderOptions {
   paymentType?: string
   isResume?: boolean
   mobileQrFallbackAttempted?: boolean
+  rechargePackageId?: string
 }
 
 interface WeixinJSBridgeLike {
@@ -498,6 +621,19 @@ const checkout = ref<CheckoutInfoResponse>({
   plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
 })
 
+const rechargePackages = computed(() => checkout.value.recharge_packages || [])
+const selectedRechargePackage = computed(() => rechargePackages.value.find(pkg => pkg.id === selectedRechargePackageId.value) || null)
+const hasBonusPackages = computed(() => rechargePackages.value.some(pkg => pkg.bonus_amount > 0))
+
+function selectRechargePackage(pkg: RechargePackage) {
+  selectedRechargePackageId.value = pkg.id
+  amount.value = pkg.amount
+}
+
+function clearRechargePackage() {
+  selectedRechargePackageId.value = ''
+}
+
 const tabs = computed(() => {
   const result: { key: 'recharge' | 'subscription'; label: string }[] = []
   if (!checkout.value.balance_disabled) result.push({ key: 'recharge', label: t('payment.tabTopUp') })
@@ -517,7 +653,8 @@ const subscriptionUsdToCnyRate = computed(() => {
   const rate = checkout.value.subscription_usd_to_cny_rate
   return Number.isFinite(rate) && rate > 0 ? rate : 0
 })
-const creditedAmount = computed(() => Math.round((validAmount.value * balanceRechargeMultiplier.value) * 100) / 100)
+const creditedAmount = computed(() => Math.round((validAmount.value * balanceRechargeMultiplier.value + (selectedRechargePackage.value?.bonus_amount || 0)) * 100) / 100)
+const estimatedBalance = computed(() => Math.round(((user.value?.balance || 0) + creditedAmount.value) * 100) / 100)
 
 // Adaptive grid: center single card, 2-col for 2 plans, 3-col for 3+
 const planGridClass = computed(() => {
@@ -561,7 +698,17 @@ const localeCode = computed(() => {
   }
   return undefined
 })
-
+const selectedCurrencySymbol = computed(() => {
+  try {
+    return new Intl.NumberFormat(localeCode.value, {
+      style: 'currency',
+      currency: selectedCurrency.value,
+      currencyDisplay: 'narrowSymbol',
+    }).formatToParts(0).find(part => part.type === 'currency')?.value || selectedCurrency.value
+  } catch {
+    return selectedCurrency.value
+  }
+})
 function currencyFractionDigits(currency: string): number {
   try {
     return new Intl.NumberFormat(undefined, {
@@ -593,6 +740,11 @@ function subscriptionPaymentAmountForCurrency(value: number, currency: string): 
 
 function formatSelectedPaymentAmount(value: number): string {
   return formatPaymentAmount(value, selectedCurrency.value, localeCode.value)
+}
+
+function formatPackageFaceAmount(value: number): string {
+  if (!Number.isFinite(value)) return '0'
+  return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
 }
 
 function formatSelectedSubscriptionPaymentAmount(value: number): string {
@@ -694,6 +846,13 @@ watch(() => [validAmount.value, selectedMethod.value] as const, ([amt, method]) 
   if (available) selectedMethod.value = available
 })
 
+watch(amount, (value) => {
+  const pkg = selectedRechargePackage.value
+  if (pkg && value !== pkg.amount) {
+    selectedRechargePackageId.value = ''
+  }
+})
+
 // Payment button class: follows selected payment method color
 const paymentButtonClass = computed(() => {
   const m = selectedMethod.value
@@ -749,7 +908,7 @@ function closeRenewalModal() {
 
 async function handleSubmitRecharge() {
   if (!canSubmit.value || submitting.value) return
-  await createOrder(validAmount.value, 'balance')
+  await createOrder(validAmount.value, 'balance', undefined, { rechargePackageId: selectedRechargePackageId.value || undefined })
 }
 
 async function confirmSubscribe() {
@@ -768,6 +927,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       paymentType: requestType,
       orderType,
       planId,
+      rechargePackageId: orderType === 'balance' ? options.rechargePackageId : undefined,
       origin: typeof window !== 'undefined' ? window.location.origin : '',
       isMobile: isMobileDevice(),
       isWechatBrowser: typeof window !== 'undefined' && /MicroMessenger/i.test(window.navigator.userAgent),
@@ -873,6 +1033,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
               planId,
               paymentType: visibleMethod,
               attempted: options.mobileQrFallbackAttempted === true,
+              rechargePackageId: options.rechargePackageId,
             },
           )
           if (!fallbackApplied) {
@@ -891,6 +1052,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
           planId,
           paymentType: visibleMethod,
           attempted: options.mobileQrFallbackAttempted === true,
+          rechargePackageId: options.rechargePackageId,
         })
         if (!fallbackApplied) {
           throw err
@@ -914,12 +1076,19 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
     } else if (apiErr.reason === 'CANCEL_RATE_LIMITED') {
       errorMessage.value = t('payment.errors.cancelRateLimited')
       errorHintMessage.value = ''
+    } else if (apiErr.reason === 'RECHARGE_PACKAGE_CHANGED' || apiErr.reason === 'RECHARGE_PACKAGE_DISABLED') {
+      const refreshed = await paymentAPI.getCheckoutInfo()
+      checkout.value = refreshed.data
+      selectedRechargePackageId.value = ''
+      errorMessage.value = t('payment.rechargePackages.changed')
+      errorHintMessage.value = ''
     } else if (await attemptMobileQrFallback(err, {
       orderAmount,
       orderType,
       planId,
       paymentType: requestType,
       attempted: options.mobileQrFallbackAttempted === true,
+      rechargePackageId: options.rechargePackageId,
     })) {
       return
     } else {
@@ -947,6 +1116,7 @@ interface MobileQrFallbackContext {
   planId?: number
   paymentType: string
   attempted: boolean
+  rechargePackageId?: string
 }
 
 function shouldFallbackToDesktopQr(err: unknown, paymentMethod: string, attempted: boolean): boolean {
@@ -994,6 +1164,7 @@ async function attemptMobileQrFallback(err: unknown, context: MobileQrFallbackCo
       paymentType: visibleMethod,
       orderType: context.orderType,
       planId: context.planId,
+      rechargePackageId: context.rechargePackageId,
       origin: typeof window !== 'undefined' ? window.location.origin : '',
       isMobile: false,
       isWechatBrowser: false,
@@ -1091,6 +1262,9 @@ onMounted(async () => {
   try {
     const res = await paymentAPI.getCheckoutInfo()
     checkout.value = res.data
+    if (checkout.value.recharge_packages_enabled && rechargePackages.value.length > 0) {
+      selectRechargePackage(rechargePackages.value.find(pkg => pkg.recommended) || rechargePackages.value[0])
+    }
     if (enabledMethods.value.length) {
       const order: readonly string[] = METHOD_ORDER
       const sorted = [...enabledMethods.value].sort((a, b) => {
@@ -1121,6 +1295,9 @@ onMounted(async () => {
         if (restoredMethod) {
           selectedMethod.value = restoredMethod
         }
+        if (restored.rechargePackageId) {
+          selectedRechargePackageId.value = restored.rechargePackageId
+        }
       } else {
         removeRecoverySnapshot()
       }
@@ -1149,3 +1326,364 @@ onMounted(async () => {
   subscriptionStore.fetchActiveSubscriptions().catch(() => {})
 })
 </script>
+
+<style scoped>
+.recharge-checkout-shell {
+  border: 1px solid #d7e5fa;
+  border-radius: 22px;
+  background:
+    linear-gradient(135deg, rgb(239 246 255 / 0.96), rgb(240 253 250 / 0.78)),
+    #f8fbff;
+  padding: 26px 32px 32px;
+  box-shadow: 0 14px 36px rgb(30 64 175 / 0.09);
+}
+
+.recharge-cashier-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid #dbe7f5;
+  padding-bottom: 24px;
+}
+
+.recharge-cashier-header h1 {
+  color: #0f172a;
+  font-size: 22px;
+  font-weight: 750;
+  line-height: 30px;
+}
+
+.recharge-cashier-header p {
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.recharge-cashier-icon {
+  display: inline-flex;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: #2563eb;
+  color: #fff;
+  box-shadow: 0 8px 18px rgb(37 99 235 / 0.22);
+}
+
+.recharge-security-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #a7f3d0;
+  border-radius: 999px;
+  background: #ecfdf5;
+  padding: 9px 15px;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.recharge-panel,
+.recharge-summary-panel,
+.recharge-account-panel {
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.recharge-panel {
+  padding: 20px;
+}
+
+.recharge-summary-panel,
+.recharge-account-panel {
+  padding: 20px;
+}
+
+.recharge-step-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.recharge-step-header h2 {
+  color: #0f172a;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 24px;
+}
+
+.recharge-step-header p {
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.recharge-step-number {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.recharge-package-card {
+  position: relative;
+  min-height: 138px;
+  overflow: hidden;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #fff;
+  padding: 18px 16px 14px;
+  text-align: left;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.recharge-package-card:hover {
+  border-color: #93b4f8;
+  box-shadow: 0 5px 18px rgb(37 99 235 / 0.08);
+  transform: translateY(-1px);
+}
+
+.recharge-package-card.is-selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 1px #2563eb, 0 6px 18px rgb(37 99 235 / 0.12);
+}
+
+.recharge-recommended {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  background: #fff7ed;
+  padding: 2px 8px;
+  color: #ea580c;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.recharge-bonus-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 14px;
+  border-radius: 999px;
+  background: #ecfdf5;
+  padding: 5px 9px;
+  color: #047857;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.recharge-bonus-notice {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  border: 1px solid #a7f3d0;
+  border-radius: 10px;
+  background: #ecfdf5;
+  padding: 13px 16px;
+  color: #047857;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.recharge-selected-check {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.recharge-help-panel {
+  border: 1px solid #f4c95d;
+  border-radius: 12px;
+  background: #fffbeb;
+  padding: 20px;
+  box-shadow: 0 4px 12px rgb(180 83 9 / 0.04);
+}
+
+.recharge-contact-button {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  border: 1px solid #f4c95d;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.72);
+  padding: 10px 14px;
+  color: #b45309;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.recharge-contact-button:hover {
+  border-color: #f59e0b;
+  background: #fff;
+}
+
+.recharge-risk-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #fff;
+  padding: 16px 22px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 20px;
+  text-align: center;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 0.04);
+}
+
+:global(.dark) .recharge-checkout-shell {
+  border-color: #334155;
+  background: linear-gradient(135deg, #111827, #0f2629);
+  box-shadow: 0 14px 36px rgb(0 0 0 / 0.22);
+}
+
+:global(.dark) .recharge-cashier-header {
+  border-color: #334155;
+}
+
+:global(.dark) .recharge-cashier-header h1 {
+  color: #f8fafc;
+}
+
+:global(.dark) .recharge-security-badge {
+  border-color: #065f46;
+  background: rgb(6 78 59 / 0.42);
+  color: #6ee7b7;
+}
+
+:global(.dark) .recharge-panel,
+:global(.dark) .recharge-summary-panel,
+:global(.dark) .recharge-account-panel,
+:global(.dark) .recharge-package-card {
+  border-color: #334155;
+  background: #111827;
+}
+
+:global(.dark) .recharge-step-header h2 {
+  color: #f8fafc;
+}
+
+:global(.dark) .recharge-package-card.is-selected {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 1px #60a5fa;
+}
+
+:global(.dark) .recharge-recommended {
+  border-color: #7c2d12;
+  background: #431407;
+  color: #fdba74;
+}
+
+:global(.dark) .recharge-bonus-pill {
+  background: rgb(6 78 59 / 0.5);
+  color: #6ee7b7;
+}
+
+:global(.dark) .recharge-bonus-notice {
+  border-color: #065f46;
+  background: rgb(6 78 59 / 0.36);
+  color: #a7f3d0;
+}
+
+:global(.dark) .recharge-help-panel {
+  border-color: #854d0e;
+  background: rgb(69 26 3 / 0.35);
+}
+
+:global(.dark) .recharge-contact-button {
+  border-color: #92400e;
+  background: rgb(120 53 15 / 0.22);
+  color: #fdba74;
+}
+
+:global(.dark) .recharge-contact-button:hover {
+  background: rgb(120 53 15 / 0.4);
+}
+
+:global(.dark) .recharge-risk-footer {
+  border-color: #334155;
+  background: #111827;
+  color: #94a3b8;
+}
+
+@media (max-width: 1023px) {
+  .recharge-workspace {
+    padding-bottom: 76px;
+  }
+}
+
+@media (max-width: 639px) {
+  .recharge-checkout-shell {
+    border-radius: 14px;
+    padding: 18px 14px 20px;
+  }
+
+  .recharge-cashier-header {
+    align-items: flex-start;
+    margin-bottom: 18px;
+    padding-bottom: 18px;
+  }
+
+  .recharge-cashier-icon {
+    width: 42px;
+    height: 42px;
+    flex-basis: 42px;
+  }
+
+  .recharge-security-badge {
+    padding: 7px 10px;
+    font-size: 11px;
+  }
+
+  .recharge-risk-footer {
+    align-items: flex-start;
+    padding: 14px 16px;
+    text-align: left;
+  }
+
+  .recharge-panel,
+  .recharge-summary-panel,
+  .recharge-account-panel {
+    padding: 16px;
+  }
+
+  .recharge-package-card {
+    min-height: 132px;
+    padding: 16px 12px 12px;
+  }
+}
+</style>

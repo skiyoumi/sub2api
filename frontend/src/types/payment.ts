@@ -76,6 +76,20 @@ export interface CheckoutInfoResponse {
   stripe_publishable_key: string
   /** When true, Alipay payments on mobile always show the QR code instead of redirecting */
   alipay_force_qrcode?: boolean
+  recharge_packages_enabled?: boolean
+  allow_custom_amount?: boolean
+  recharge_packages?: RechargePackage[]
+  bonus_balance?: number
+  nearest_bonus_expiry?: string | null
+}
+
+export interface RechargePackage {
+  id: string
+  amount: number
+  bonus_amount: number
+  bonus_validity_days: number
+  recommended: boolean
+  sort_order: number
 }
 
 // ==================== Orders ====================
@@ -102,6 +116,11 @@ export interface PaymentOrder {
   refund_request_reason?: string
   plan_id?: number
   provider_instance_id?: string
+  base_amount?: number
+  permanent_credit_amount?: number
+  bonus_amount?: number
+  bonus_expires_at?: string
+  recharge_package_id?: string
 }
 
 // ==================== Plans & Channels ====================
@@ -174,6 +193,7 @@ export interface CreateOrderRequest {
   openid?: string
   wechat_resume_token?: string
   is_mobile?: boolean
+  recharge_package_id?: string
 }
 
 export type CreateOrderResultType = 'order_created' | 'oauth_required' | 'jsapi_ready'
@@ -214,6 +234,10 @@ export interface CreateOrderResult {
   out_trade_no?: string
   payment_mode?: string
   resume_token?: string
+  base_amount?: number
+  permanent_credit_amount?: number
+  bonus_amount?: number
+  recharge_package_id?: string
   oauth?: WechatOAuthInfo
   jsapi?: WechatJSAPIPayload
   jsapi_payload?: WechatJSAPIPayload

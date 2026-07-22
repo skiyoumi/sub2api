@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -40,6 +41,19 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if err != nil {
 		return nil, err
 	}
+	if req.OrderType == payment.OrderTypeSubscription && strings.TrimSpace(req.RechargePackageID) != "" {
+		return nil, infraerrors.BadRequest("INVALID_INPUT", "subscription order cannot use a recharge package")
+	}
+	if req.OrderType == payment.OrderTypeBalance {
+		selection, resolveErr := ResolveRechargePackage(cfg, req.RechargePackageID, req.Amount)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		if selection != nil && req.RechargePackageHash != "" && req.RechargePackageHash != selection.ConfigHash {
+			return nil, infraerrors.Conflict("RECHARGE_PACKAGE_CHANGED", "recharge package has changed")
+		}
+		req.rechargePackage = selection
+	}
 	if err := s.checkCancelRateLimit(ctx, req.UserID, cfg); err != nil {
 		return nil, err
 	}
@@ -58,6 +72,9 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if plan != nil {
 		orderAmount = plan.Price
 		limitAmount = plan.Price
+	} else if req.rechargePackage != nil {
+		orderAmount = req.rechargePackage.CreditedAmount.InexactFloat64()
+		limitAmount = req.rechargePackage.BaseAmount.InexactFloat64()
 	} else if req.OrderType == payment.OrderTypeBalance {
 		orderAmount = calculateCreditedBalance(req.Amount, cfg.BalanceRechargeMultiplier)
 	}
@@ -171,6 +188,12 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		return nil, err
 	}
 	providerSnapshot := buildPaymentOrderProviderSnapshot(sel, req)
+	if req.rechargePackage != nil {
+		if providerSnapshot == nil {
+			providerSnapshot = make(map[string]any)
+		}
+		providerSnapshot["_recharge_package"] = req.rechargePackage.Snapshot()
+	}
 	selectedInstanceID := ""
 	selectedProviderKey := ""
 	if sel != nil {
@@ -212,6 +235,21 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 	order, err := b.Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create order: %w", err)
+	}
+	if req.rechargePackage != nil {
+		snapshot, marshalErr := json.Marshal(req.rechargePackage.Snapshot())
+		if marshalErr != nil {
+			return nil, fmt.Errorf("encode recharge package snapshot: %w", marshalErr)
+		}
+		if _, execErr := tx.Client().ExecContext(ctx, `
+			UPDATE payment_orders SET
+				recharge_package_id = $1, base_amount = $2, permanent_credit_amount = $3,
+				bonus_amount = $4, bonus_validity_days = $5, recharge_package_snapshot = $6::jsonb
+			WHERE id = $7`, req.rechargePackage.Package.ID, req.rechargePackage.BaseAmount.String(),
+			req.rechargePackage.PermanentAmount.String(), req.rechargePackage.BonusAmount.String(),
+			req.rechargePackage.Package.BonusValidityDays, string(snapshot), order.ID); execErr != nil {
+			return nil, fmt.Errorf("persist recharge package snapshot: %w", execErr)
+		}
 	}
 	code := fmt.Sprintf("PAY-%d-%d", order.ID, time.Now().UnixNano()%100000)
 	order, err = tx.PaymentOrder.UpdateOneID(order.ID).SetRechargeCode(code).Save(ctx)
@@ -720,7 +758,7 @@ func classifyCreatePaymentError(req CreateOrderRequest, providerKey string, err 
 }
 
 func buildCreateOrderResponse(order *dbent.PaymentOrder, req CreateOrderRequest, payAmount float64, sel *payment.InstanceSelection, pr *payment.CreatePaymentResponse, resultType payment.CreatePaymentResultType) *CreateOrderResponse {
-	return &CreateOrderResponse{
+	response := &CreateOrderResponse{
 		OrderID:      order.ID,
 		Amount:       order.Amount,
 		PayAmount:    payAmount,
@@ -742,6 +780,13 @@ func buildCreateOrderResponse(order *dbent.PaymentOrder, req CreateOrderRequest,
 		ExpiresAt:    order.ExpiresAt,
 		PaymentMode:  sel.PaymentMode,
 	}
+	if req.rechargePackage != nil {
+		response.BaseAmount = req.rechargePackage.BaseAmount.InexactFloat64()
+		response.PermanentCreditAmount = req.rechargePackage.PermanentAmount.InexactFloat64()
+		response.BonusAmount = req.rechargePackage.BonusAmount.InexactFloat64()
+		response.RechargePackageID = req.rechargePackage.Package.ID
+	}
+	return response
 }
 
 func buildWeChatPaymentOAuthStartURL(req CreateOrderRequest, scope string) (string, error) {
@@ -759,6 +804,14 @@ func buildWeChatPaymentOAuthStartURL(req CreateOrderRequest, scope string) (stri
 	}
 	if req.PlanID > 0 {
 		q.Set("plan_id", strconv.FormatInt(req.PlanID, 10))
+	}
+	if packageID := strings.TrimSpace(req.RechargePackageID); packageID != "" {
+		q.Set("recharge_package_id", packageID)
+	}
+	if packageHash := strings.TrimSpace(req.RechargePackageHash); packageHash != "" {
+		q.Set("recharge_package_hash", packageHash)
+	} else if req.rechargePackage != nil {
+		q.Set("recharge_package_hash", req.rechargePackage.ConfigHash)
 	}
 	if scope = strings.TrimSpace(scope); scope != "" {
 		q.Set("scope", scope)

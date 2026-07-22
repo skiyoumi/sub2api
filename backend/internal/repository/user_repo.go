@@ -23,6 +23,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
+	"github.com/shopspring/decimal"
 
 	entsql "entgo.io/ent/dialect/sql"
 )
@@ -778,6 +779,13 @@ func (r *userRepository) ApplyRedeemBalanceAdjustment(ctx context.Context, id in
 // 透支策略：允许余额变为负数，确保当前请求能够完成
 // 中间件会阻止余额 <= 0 的用户发起后续请求
 func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount float64) error {
+	if amount > 0 && r.client != nil {
+		if err := r.deductBalanceWithBonus(ctx, id, amount); err == nil {
+			return nil
+		} else if !strings.Contains(err.Error(), "wallet_bonus_grants") && !strings.Contains(err.Error(), "wallet_bonus_transactions") {
+			return err
+		}
+	}
 	client := clientFromContext(ctx, r.client)
 	n, err := client.User.Update().
 		Where(dbuser.IDEQ(id), dbuser.BalanceGTE(amount)).
@@ -801,6 +809,112 @@ func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount flo
 		return service.ErrUserNotFound
 	}
 	return nil
+}
+
+func (r *userRepository) deductBalanceWithBonus(ctx context.Context, id int64, amount float64) error {
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	client := tx.Client()
+	var rawBalance string
+	userRows, err := client.QueryContext(ctx, `SELECT balance::text FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, id)
+	if err != nil {
+		return err
+	}
+	if !userRows.Next() {
+		_ = userRows.Close()
+		return service.ErrUserNotFound
+	}
+	if err := userRows.Scan(&rawBalance); err != nil {
+		_ = userRows.Close()
+		return err
+	}
+	if err := userRows.Close(); err != nil {
+		return err
+	}
+	balance, err := decimal.NewFromString(rawBalance)
+	if err != nil {
+		return err
+	}
+	rows, err := client.QueryContext(ctx, `SELECT id, remaining_amount::text, source_type, source_id, expires_at <= NOW() FROM wallet_bonus_grants WHERE user_id = $1 AND status = 'ACTIVE' AND remaining_amount > 0 ORDER BY expires_at, id FOR UPDATE`, id)
+	if err != nil {
+		return err
+	}
+	type grant struct {
+		id                   int64
+		remaining            decimal.Decimal
+		sourceType, sourceID string
+		expired              bool
+	}
+	var grants []grant
+	expired := decimal.Zero
+	for rows.Next() {
+		var g grant
+		var raw string
+		if err := rows.Scan(&g.id, &raw, &g.sourceType, &g.sourceID, &g.expired); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		g.remaining, err = decimal.NewFromString(raw)
+		if err != nil {
+			_ = rows.Close()
+			return err
+		}
+		grants = append(grants, g)
+		if g.expired {
+			expired = expired.Add(g.remaining)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	_ = rows.Close()
+	effective := balance.Sub(expired)
+	newBalance := effective.Sub(decimal.NewFromFloat(amount))
+	requestID := fmt.Sprintf("deduct_balance:%d:%d", id, time.Now().UnixNano())
+	for _, g := range grants {
+		if g.expired {
+			if _, err := client.ExecContext(ctx, `UPDATE wallet_bonus_grants SET remaining_amount = 0, status = 'EXPIRED', expired_at = NOW(), updated_at = NOW() WHERE id = $1 AND status = 'ACTIVE'`, g.id); err != nil {
+				return err
+			}
+			if _, err := client.ExecContext(ctx, `INSERT INTO wallet_bonus_transactions (user_id, grant_id, type, amount, request_id, source_type, source_id, balance_after) VALUES ($1, $2, 'EXPIRE', $3, $4, $5, $6, $7) ON CONFLICT (request_id, grant_id, type) DO NOTHING`, id, g.id, g.remaining.String(), requestID, g.sourceType, g.sourceID, newBalance.String()); err != nil {
+				return err
+			}
+		}
+	}
+	remainingCost := decimal.NewFromFloat(amount)
+	for _, g := range grants {
+		if g.expired || !remainingCost.IsPositive() {
+			continue
+		}
+		spent := decimal.Min(g.remaining, remainingCost)
+		if _, err := client.ExecContext(ctx, `UPDATE wallet_bonus_grants SET remaining_amount = remaining_amount - $1, status = CASE WHEN remaining_amount - $1 <= 0 THEN 'CONSUMED' ELSE status END, updated_at = NOW() WHERE id = $2 AND status = 'ACTIVE' AND remaining_amount >= $1`, spent.String(), g.id); err != nil {
+			return err
+		}
+		if _, err := client.ExecContext(ctx, `INSERT INTO wallet_bonus_transactions (user_id, grant_id, type, amount, request_id, source_type, source_id, balance_after) VALUES ($1, $2, 'SPEND', $3, $4, $5, $6, $7) ON CONFLICT (request_id, grant_id, type) DO NOTHING`, id, g.id, spent.String(), requestID, g.sourceType, g.sourceID, newBalance.String()); err != nil {
+			return err
+		}
+		remainingCost = remainingCost.Sub(spent)
+	}
+	updatedRows, err := client.QueryContext(ctx, `UPDATE users SET balance = $1, updated_at = NOW() WHERE id = $2 AND deleted_at IS NULL RETURNING id`, newBalance.String(), id)
+	if err != nil {
+		return err
+	}
+	if !updatedRows.Next() {
+		_ = updatedRows.Close()
+		return service.ErrUserNotFound
+	}
+	if err := updatedRows.Scan(&id); err != nil {
+		_ = updatedRows.Close()
+		return err
+	}
+	if err := updatedRows.Close(); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *userRepository) UpdateConcurrency(ctx context.Context, id int64, amount int) error {

@@ -257,7 +257,10 @@ type SystemSettings struct {
 	PaymentProductNamePrefix         string   `json:"payment_product_name_prefix"`
 	PaymentProductNameSuffix         string   `json:"payment_product_name_suffix"`
 	PaymentHelpImageURL              string   `json:"payment_help_image_url"`
-	PaymentHelpText                  string   `json:"payment_help_text"`
+	PaymentHelpText                   string                    `json:"payment_help_text"`
+	PaymentRechargePackagesEnabled   bool                      `json:"payment_recharge_packages_enabled"`
+	PaymentAllowCustomRechargeAmount bool                      `json:"payment_allow_custom_recharge_amount"`
+	PaymentRechargePackages          []service.RechargePackage `json:"payment_recharge_packages"`
 
 	// Cancel rate limit
 	PaymentCancelRateLimitEnabled bool   `json:"payment_cancel_rate_limit_enabled"`

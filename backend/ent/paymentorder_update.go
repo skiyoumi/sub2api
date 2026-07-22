@@ -168,6 +168,154 @@ func (_u *PaymentOrderUpdate) SetNillableRechargeCode(v *string) *PaymentOrderUp
 	return _u
 }
 
+// SetRechargePackageID sets the "recharge_package_id" field.
+func (_u *PaymentOrderUpdate) SetRechargePackageID(v string) *PaymentOrderUpdate {
+	_u.mutation.SetRechargePackageID(v)
+	return _u
+}
+
+// SetNillableRechargePackageID sets the "recharge_package_id" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableRechargePackageID(v *string) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetRechargePackageID(*v)
+	}
+	return _u
+}
+
+// ClearRechargePackageID clears the value of the "recharge_package_id" field.
+func (_u *PaymentOrderUpdate) ClearRechargePackageID() *PaymentOrderUpdate {
+	_u.mutation.ClearRechargePackageID()
+	return _u
+}
+
+// SetBaseAmount sets the "base_amount" field.
+func (_u *PaymentOrderUpdate) SetBaseAmount(v float64) *PaymentOrderUpdate {
+	_u.mutation.ResetBaseAmount()
+	_u.mutation.SetBaseAmount(v)
+	return _u
+}
+
+// SetNillableBaseAmount sets the "base_amount" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableBaseAmount(v *float64) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetBaseAmount(*v)
+	}
+	return _u
+}
+
+// AddBaseAmount adds value to the "base_amount" field.
+func (_u *PaymentOrderUpdate) AddBaseAmount(v float64) *PaymentOrderUpdate {
+	_u.mutation.AddBaseAmount(v)
+	return _u
+}
+
+// ClearBaseAmount clears the value of the "base_amount" field.
+func (_u *PaymentOrderUpdate) ClearBaseAmount() *PaymentOrderUpdate {
+	_u.mutation.ClearBaseAmount()
+	return _u
+}
+
+// SetPermanentCreditAmount sets the "permanent_credit_amount" field.
+func (_u *PaymentOrderUpdate) SetPermanentCreditAmount(v float64) *PaymentOrderUpdate {
+	_u.mutation.ResetPermanentCreditAmount()
+	_u.mutation.SetPermanentCreditAmount(v)
+	return _u
+}
+
+// SetNillablePermanentCreditAmount sets the "permanent_credit_amount" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillablePermanentCreditAmount(v *float64) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetPermanentCreditAmount(*v)
+	}
+	return _u
+}
+
+// AddPermanentCreditAmount adds value to the "permanent_credit_amount" field.
+func (_u *PaymentOrderUpdate) AddPermanentCreditAmount(v float64) *PaymentOrderUpdate {
+	_u.mutation.AddPermanentCreditAmount(v)
+	return _u
+}
+
+// ClearPermanentCreditAmount clears the value of the "permanent_credit_amount" field.
+func (_u *PaymentOrderUpdate) ClearPermanentCreditAmount() *PaymentOrderUpdate {
+	_u.mutation.ClearPermanentCreditAmount()
+	return _u
+}
+
+// SetBonusAmount sets the "bonus_amount" field.
+func (_u *PaymentOrderUpdate) SetBonusAmount(v float64) *PaymentOrderUpdate {
+	_u.mutation.ResetBonusAmount()
+	_u.mutation.SetBonusAmount(v)
+	return _u
+}
+
+// SetNillableBonusAmount sets the "bonus_amount" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableBonusAmount(v *float64) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetBonusAmount(*v)
+	}
+	return _u
+}
+
+// AddBonusAmount adds value to the "bonus_amount" field.
+func (_u *PaymentOrderUpdate) AddBonusAmount(v float64) *PaymentOrderUpdate {
+	_u.mutation.AddBonusAmount(v)
+	return _u
+}
+
+// SetBonusValidityDays sets the "bonus_validity_days" field.
+func (_u *PaymentOrderUpdate) SetBonusValidityDays(v int) *PaymentOrderUpdate {
+	_u.mutation.ResetBonusValidityDays()
+	_u.mutation.SetBonusValidityDays(v)
+	return _u
+}
+
+// SetNillableBonusValidityDays sets the "bonus_validity_days" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableBonusValidityDays(v *int) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetBonusValidityDays(*v)
+	}
+	return _u
+}
+
+// AddBonusValidityDays adds value to the "bonus_validity_days" field.
+func (_u *PaymentOrderUpdate) AddBonusValidityDays(v int) *PaymentOrderUpdate {
+	_u.mutation.AddBonusValidityDays(v)
+	return _u
+}
+
+// SetBonusExpiresAt sets the "bonus_expires_at" field.
+func (_u *PaymentOrderUpdate) SetBonusExpiresAt(v time.Time) *PaymentOrderUpdate {
+	_u.mutation.SetBonusExpiresAt(v)
+	return _u
+}
+
+// SetNillableBonusExpiresAt sets the "bonus_expires_at" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableBonusExpiresAt(v *time.Time) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetBonusExpiresAt(*v)
+	}
+	return _u
+}
+
+// ClearBonusExpiresAt clears the value of the "bonus_expires_at" field.
+func (_u *PaymentOrderUpdate) ClearBonusExpiresAt() *PaymentOrderUpdate {
+	_u.mutation.ClearBonusExpiresAt()
+	return _u
+}
+
+// SetRechargePackageSnapshot sets the "recharge_package_snapshot" field.
+func (_u *PaymentOrderUpdate) SetRechargePackageSnapshot(v map[string]interface{}) *PaymentOrderUpdate {
+	_u.mutation.SetRechargePackageSnapshot(v)
+	return _u
+}
+
+// ClearRechargePackageSnapshot clears the value of the "recharge_package_snapshot" field.
+func (_u *PaymentOrderUpdate) ClearRechargePackageSnapshot() *PaymentOrderUpdate {
+	_u.mutation.ClearRechargePackageSnapshot()
+	return _u
+}
+
 // SetOutTradeNo sets the "out_trade_no" field.
 func (_u *PaymentOrderUpdate) SetOutTradeNo(v string) *PaymentOrderUpdate {
 	_u.mutation.SetOutTradeNo(v)
@@ -783,6 +931,11 @@ func (_u *PaymentOrderUpdate) check() error {
 			return &ValidationError{Name: "recharge_code", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.recharge_code": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RechargePackageID(); ok {
+		if err := paymentorder.RechargePackageIDValidator(v); err != nil {
+			return &ValidationError{Name: "recharge_package_id", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.recharge_package_id": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.OutTradeNo(); ok {
 		if err := paymentorder.OutTradeNoValidator(v); err != nil {
 			return &ValidationError{Name: "out_trade_no", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.out_trade_no": %w`, err)}
@@ -883,6 +1036,54 @@ func (_u *PaymentOrderUpdate) sqlSave(ctx context.Context) (_node int, err error
 	}
 	if value, ok := _u.mutation.RechargeCode(); ok {
 		_spec.SetField(paymentorder.FieldRechargeCode, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RechargePackageID(); ok {
+		_spec.SetField(paymentorder.FieldRechargePackageID, field.TypeString, value)
+	}
+	if _u.mutation.RechargePackageIDCleared() {
+		_spec.ClearField(paymentorder.FieldRechargePackageID, field.TypeString)
+	}
+	if value, ok := _u.mutation.BaseAmount(); ok {
+		_spec.SetField(paymentorder.FieldBaseAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedBaseAmount(); ok {
+		_spec.AddField(paymentorder.FieldBaseAmount, field.TypeFloat64, value)
+	}
+	if _u.mutation.BaseAmountCleared() {
+		_spec.ClearField(paymentorder.FieldBaseAmount, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.PermanentCreditAmount(); ok {
+		_spec.SetField(paymentorder.FieldPermanentCreditAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedPermanentCreditAmount(); ok {
+		_spec.AddField(paymentorder.FieldPermanentCreditAmount, field.TypeFloat64, value)
+	}
+	if _u.mutation.PermanentCreditAmountCleared() {
+		_spec.ClearField(paymentorder.FieldPermanentCreditAmount, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.BonusAmount(); ok {
+		_spec.SetField(paymentorder.FieldBonusAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedBonusAmount(); ok {
+		_spec.AddField(paymentorder.FieldBonusAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.BonusValidityDays(); ok {
+		_spec.SetField(paymentorder.FieldBonusValidityDays, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedBonusValidityDays(); ok {
+		_spec.AddField(paymentorder.FieldBonusValidityDays, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.BonusExpiresAt(); ok {
+		_spec.SetField(paymentorder.FieldBonusExpiresAt, field.TypeTime, value)
+	}
+	if _u.mutation.BonusExpiresAtCleared() {
+		_spec.ClearField(paymentorder.FieldBonusExpiresAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.RechargePackageSnapshot(); ok {
+		_spec.SetField(paymentorder.FieldRechargePackageSnapshot, field.TypeJSON, value)
+	}
+	if _u.mutation.RechargePackageSnapshotCleared() {
+		_spec.ClearField(paymentorder.FieldRechargePackageSnapshot, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.OutTradeNo(); ok {
 		_spec.SetField(paymentorder.FieldOutTradeNo, field.TypeString, value)
@@ -1228,6 +1429,154 @@ func (_u *PaymentOrderUpdateOne) SetNillableRechargeCode(v *string) *PaymentOrde
 	if v != nil {
 		_u.SetRechargeCode(*v)
 	}
+	return _u
+}
+
+// SetRechargePackageID sets the "recharge_package_id" field.
+func (_u *PaymentOrderUpdateOne) SetRechargePackageID(v string) *PaymentOrderUpdateOne {
+	_u.mutation.SetRechargePackageID(v)
+	return _u
+}
+
+// SetNillableRechargePackageID sets the "recharge_package_id" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableRechargePackageID(v *string) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetRechargePackageID(*v)
+	}
+	return _u
+}
+
+// ClearRechargePackageID clears the value of the "recharge_package_id" field.
+func (_u *PaymentOrderUpdateOne) ClearRechargePackageID() *PaymentOrderUpdateOne {
+	_u.mutation.ClearRechargePackageID()
+	return _u
+}
+
+// SetBaseAmount sets the "base_amount" field.
+func (_u *PaymentOrderUpdateOne) SetBaseAmount(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.ResetBaseAmount()
+	_u.mutation.SetBaseAmount(v)
+	return _u
+}
+
+// SetNillableBaseAmount sets the "base_amount" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableBaseAmount(v *float64) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetBaseAmount(*v)
+	}
+	return _u
+}
+
+// AddBaseAmount adds value to the "base_amount" field.
+func (_u *PaymentOrderUpdateOne) AddBaseAmount(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.AddBaseAmount(v)
+	return _u
+}
+
+// ClearBaseAmount clears the value of the "base_amount" field.
+func (_u *PaymentOrderUpdateOne) ClearBaseAmount() *PaymentOrderUpdateOne {
+	_u.mutation.ClearBaseAmount()
+	return _u
+}
+
+// SetPermanentCreditAmount sets the "permanent_credit_amount" field.
+func (_u *PaymentOrderUpdateOne) SetPermanentCreditAmount(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.ResetPermanentCreditAmount()
+	_u.mutation.SetPermanentCreditAmount(v)
+	return _u
+}
+
+// SetNillablePermanentCreditAmount sets the "permanent_credit_amount" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillablePermanentCreditAmount(v *float64) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetPermanentCreditAmount(*v)
+	}
+	return _u
+}
+
+// AddPermanentCreditAmount adds value to the "permanent_credit_amount" field.
+func (_u *PaymentOrderUpdateOne) AddPermanentCreditAmount(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.AddPermanentCreditAmount(v)
+	return _u
+}
+
+// ClearPermanentCreditAmount clears the value of the "permanent_credit_amount" field.
+func (_u *PaymentOrderUpdateOne) ClearPermanentCreditAmount() *PaymentOrderUpdateOne {
+	_u.mutation.ClearPermanentCreditAmount()
+	return _u
+}
+
+// SetBonusAmount sets the "bonus_amount" field.
+func (_u *PaymentOrderUpdateOne) SetBonusAmount(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.ResetBonusAmount()
+	_u.mutation.SetBonusAmount(v)
+	return _u
+}
+
+// SetNillableBonusAmount sets the "bonus_amount" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableBonusAmount(v *float64) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetBonusAmount(*v)
+	}
+	return _u
+}
+
+// AddBonusAmount adds value to the "bonus_amount" field.
+func (_u *PaymentOrderUpdateOne) AddBonusAmount(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.AddBonusAmount(v)
+	return _u
+}
+
+// SetBonusValidityDays sets the "bonus_validity_days" field.
+func (_u *PaymentOrderUpdateOne) SetBonusValidityDays(v int) *PaymentOrderUpdateOne {
+	_u.mutation.ResetBonusValidityDays()
+	_u.mutation.SetBonusValidityDays(v)
+	return _u
+}
+
+// SetNillableBonusValidityDays sets the "bonus_validity_days" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableBonusValidityDays(v *int) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetBonusValidityDays(*v)
+	}
+	return _u
+}
+
+// AddBonusValidityDays adds value to the "bonus_validity_days" field.
+func (_u *PaymentOrderUpdateOne) AddBonusValidityDays(v int) *PaymentOrderUpdateOne {
+	_u.mutation.AddBonusValidityDays(v)
+	return _u
+}
+
+// SetBonusExpiresAt sets the "bonus_expires_at" field.
+func (_u *PaymentOrderUpdateOne) SetBonusExpiresAt(v time.Time) *PaymentOrderUpdateOne {
+	_u.mutation.SetBonusExpiresAt(v)
+	return _u
+}
+
+// SetNillableBonusExpiresAt sets the "bonus_expires_at" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableBonusExpiresAt(v *time.Time) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetBonusExpiresAt(*v)
+	}
+	return _u
+}
+
+// ClearBonusExpiresAt clears the value of the "bonus_expires_at" field.
+func (_u *PaymentOrderUpdateOne) ClearBonusExpiresAt() *PaymentOrderUpdateOne {
+	_u.mutation.ClearBonusExpiresAt()
+	return _u
+}
+
+// SetRechargePackageSnapshot sets the "recharge_package_snapshot" field.
+func (_u *PaymentOrderUpdateOne) SetRechargePackageSnapshot(v map[string]interface{}) *PaymentOrderUpdateOne {
+	_u.mutation.SetRechargePackageSnapshot(v)
+	return _u
+}
+
+// ClearRechargePackageSnapshot clears the value of the "recharge_package_snapshot" field.
+func (_u *PaymentOrderUpdateOne) ClearRechargePackageSnapshot() *PaymentOrderUpdateOne {
+	_u.mutation.ClearRechargePackageSnapshot()
 	return _u
 }
 
@@ -1859,6 +2208,11 @@ func (_u *PaymentOrderUpdateOne) check() error {
 			return &ValidationError{Name: "recharge_code", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.recharge_code": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RechargePackageID(); ok {
+		if err := paymentorder.RechargePackageIDValidator(v); err != nil {
+			return &ValidationError{Name: "recharge_package_id", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.recharge_package_id": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.OutTradeNo(); ok {
 		if err := paymentorder.OutTradeNoValidator(v); err != nil {
 			return &ValidationError{Name: "out_trade_no", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.out_trade_no": %w`, err)}
@@ -1976,6 +2330,54 @@ func (_u *PaymentOrderUpdateOne) sqlSave(ctx context.Context) (_node *PaymentOrd
 	}
 	if value, ok := _u.mutation.RechargeCode(); ok {
 		_spec.SetField(paymentorder.FieldRechargeCode, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RechargePackageID(); ok {
+		_spec.SetField(paymentorder.FieldRechargePackageID, field.TypeString, value)
+	}
+	if _u.mutation.RechargePackageIDCleared() {
+		_spec.ClearField(paymentorder.FieldRechargePackageID, field.TypeString)
+	}
+	if value, ok := _u.mutation.BaseAmount(); ok {
+		_spec.SetField(paymentorder.FieldBaseAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedBaseAmount(); ok {
+		_spec.AddField(paymentorder.FieldBaseAmount, field.TypeFloat64, value)
+	}
+	if _u.mutation.BaseAmountCleared() {
+		_spec.ClearField(paymentorder.FieldBaseAmount, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.PermanentCreditAmount(); ok {
+		_spec.SetField(paymentorder.FieldPermanentCreditAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedPermanentCreditAmount(); ok {
+		_spec.AddField(paymentorder.FieldPermanentCreditAmount, field.TypeFloat64, value)
+	}
+	if _u.mutation.PermanentCreditAmountCleared() {
+		_spec.ClearField(paymentorder.FieldPermanentCreditAmount, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.BonusAmount(); ok {
+		_spec.SetField(paymentorder.FieldBonusAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedBonusAmount(); ok {
+		_spec.AddField(paymentorder.FieldBonusAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.BonusValidityDays(); ok {
+		_spec.SetField(paymentorder.FieldBonusValidityDays, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedBonusValidityDays(); ok {
+		_spec.AddField(paymentorder.FieldBonusValidityDays, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.BonusExpiresAt(); ok {
+		_spec.SetField(paymentorder.FieldBonusExpiresAt, field.TypeTime, value)
+	}
+	if _u.mutation.BonusExpiresAtCleared() {
+		_spec.ClearField(paymentorder.FieldBonusExpiresAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.RechargePackageSnapshot(); ok {
+		_spec.SetField(paymentorder.FieldRechargePackageSnapshot, field.TypeJSON, value)
+	}
+	if _u.mutation.RechargePackageSnapshotCleared() {
+		_spec.ClearField(paymentorder.FieldRechargePackageSnapshot, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.OutTradeNo(); ok {
 		_spec.SetField(paymentorder.FieldOutTradeNo, field.TypeString, value)

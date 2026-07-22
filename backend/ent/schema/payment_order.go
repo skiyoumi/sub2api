@@ -52,6 +52,23 @@ func (PaymentOrder) Fields() []ent.Field {
 			Default(0),
 		field.String("recharge_code").
 			MaxLen(64),
+		field.String("recharge_package_id").
+			Optional().Nillable().MaxLen(64),
+		field.Float("base_amount").
+			Optional().Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,2)"}),
+		field.Float("permanent_credit_amount").
+			Optional().Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
+		field.Float("bonus_amount").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).Default(0),
+		field.Int("bonus_validity_days").Default(0),
+		field.Time("bonus_expires_at").
+			Optional().Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+		field.JSON("recharge_package_snapshot", map[string]any{}).
+			Optional().
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 
 		// 支付信息
 		field.String("out_trade_no").

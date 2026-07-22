@@ -328,6 +328,28 @@ func resolveRedeemAction(existing *RedeemCode, lookupErr error) redeemAction {
 }
 
 func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder, lease *paymentFulfillmentLease) error {
+	packageSelection, err := RechargePackageSelectionFromProviderSnapshot(o.ProviderSnapshot)
+	if err != nil {
+		return err
+	}
+	if packageSelection != nil && packageSelection.BonusAmount.IsPositive() {
+		if s.bonusWallet == nil {
+			return errors.New("bonus wallet is not configured")
+		}
+		if _, err := s.bonusWallet.GrantForPayment(ctx, BonusGrantInput{
+			UserID: o.UserID, PaymentOrderID: o.ID,
+			PermanentAmount: packageSelection.PermanentAmount,
+			BonusAmount: packageSelection.BonusAmount,
+			ValidityDays: packageSelection.Package.BonusValidityDays,
+			FulfilledAt: time.Now(),
+		}); err != nil {
+			return fmt.Errorf("grant payment bonus wallet: %w", err)
+		}
+		if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
+			return err
+		}
+		return s.markCompleted(ctx, o, lease, "RECHARGE_SUCCESS")
+	}
 	// Idempotency: check if redeem code already exists (from a previous partial run)
 	existing, lookupErr := s.redeemService.GetByCode(ctx, o.RechargeCode)
 	action := resolveRedeemAction(existing, lookupErr)

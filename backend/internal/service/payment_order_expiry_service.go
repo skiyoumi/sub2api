@@ -116,4 +116,19 @@ func (s *PaymentOrderExpiryService) runOnce() {
 	if expired > 0 {
 		slog.Info("[PaymentOrderExpiry] expired timed-out orders", "count", expired)
 	}
+
+	bonusCtx, bonusCancel := context.WithTimeout(context.Background(), expiryCheckTimeout)
+	defer bonusCancel()
+	bonusResult, err := s.paymentSvc.ExpireBonusWalletGrants(bonusCtx, 500)
+	if err != nil {
+		slog.Error("[PaymentOrderExpiry] failed to expire bonus wallet grants", "error", err)
+		return
+	}
+	if bonusResult.Grants > 0 {
+		slog.Info("[PaymentOrderExpiry] expired bonus wallet grants",
+			"grants", bonusResult.Grants,
+			"users", bonusResult.Users,
+			"amount", bonusResult.Amount.String(),
+		)
+	}
 }

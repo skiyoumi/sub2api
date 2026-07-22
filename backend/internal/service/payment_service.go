@@ -83,8 +83,11 @@ type CreateOrderRequest struct {
 	ReturnURL       string
 	PaymentSource   string
 	OrderType       string
-	PlanID          int64
-	Locale          string
+	PlanID              int64
+	RechargePackageID   string
+	RechargePackageHash string
+	Locale              string
+	rechargePackage *RechargePackageSelection
 }
 
 type CreateOrderResponse struct {
@@ -109,6 +112,10 @@ type CreateOrderResponse struct {
 	ExpiresAt    time.Time                       `json:"expires_at"`
 	PaymentMode  string                          `json:"payment_mode,omitempty"`
 	ResumeToken  string                          `json:"resume_token,omitempty"`
+	BaseAmount            float64 `json:"base_amount,omitempty"`
+	PermanentCreditAmount float64 `json:"permanent_credit_amount,omitempty"`
+	BonusAmount           float64 `json:"bonus_amount,omitempty"`
+	RechargePackageID     string  `json:"recharge_package_id,omitempty"`
 }
 
 type OrderListParams struct {
@@ -189,12 +196,20 @@ type PaymentService struct {
 	resumeService            *PaymentResumeService
 	affiliateService         *AffiliateService
 	notificationEmailService *NotificationEmailService
+	bonusWallet              *BonusWallet
 }
 
 func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService) *PaymentService {
 	svc := &PaymentService{entClient: entClient, registry: registry, loadBalancer: newVisibleMethodLoadBalancer(loadBalancer, configService), redeemService: redeemService, subscriptionSvc: subscriptionSvc, configService: configService, userRepo: userRepo, groupRepo: groupRepo, affiliateService: affiliateService}
+	if entClient != nil {
+		svc.bonusWallet = NewBonusWallet(entClient)
+	}
 	svc.resumeService = psNewPaymentResumeService(configService)
 	return svc
+}
+
+func (s *PaymentService) SetBonusWallet(wallet *BonusWallet) {
+	s.bonusWallet = wallet
 }
 
 func (s *PaymentService) SetNotificationEmailService(notificationEmailService *NotificationEmailService) {
