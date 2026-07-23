@@ -6,7 +6,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { paymentAPI } from '@/api/payment'
-import type { PaymentConfig, PaymentOrder, SubscriptionPlan, CreateOrderRequest } from '@/types/payment'
+import type { CheckoutInfoResponse, PaymentConfig, PaymentOrder, SubscriptionPlan, CreateOrderRequest } from '@/types/payment'
 
 export const usePaymentStore = defineStore('payment', () => {
   // ==================== State ====================
@@ -17,9 +17,16 @@ export const usePaymentStore = defineStore('payment', () => {
   const currentOrder = ref<PaymentOrder | null>(null)
   /** Available subscription plans */
   const plans = ref<SubscriptionPlan[]>([])
+  const bonusBalance = ref(0)
+  const permanentBalance = ref(0)
+  const nearestBonusExpiry = ref<string | null>(null)
+  const nearestBonusExpiryAmount = ref(0)
+  const bonusSummaryLoaded = ref(false)
 
   const configLoading = ref(false)
   const configLoaded = ref(false)
+  const bonusSummaryLoading = ref(false)
+  let pendingAggregateBalance: number | undefined
 
   // ==================== Actions ====================
 
@@ -60,6 +67,39 @@ export const usePaymentStore = defineStore('payment', () => {
     }
   }
 
+  function setBonusSummary(checkout: Pick<CheckoutInfoResponse, 'bonus_balance' | 'nearest_bonus_expiry' | 'nearest_bonus_expiry_amount'>, aggregateBalance?: number) {
+    const nextBonusBalance = Math.max(0, Number(checkout.bonus_balance || 0))
+    bonusBalance.value = nextBonusBalance
+    if (Number.isFinite(aggregateBalance)) {
+      permanentBalance.value = Math.max(0, Number(aggregateBalance) - nextBonusBalance)
+    }
+    nearestBonusExpiry.value = checkout.nearest_bonus_expiry || null
+    nearestBonusExpiryAmount.value = Math.max(0, Number(checkout.nearest_bonus_expiry_amount || 0))
+    bonusSummaryLoaded.value = true
+  }
+
+  async function fetchBonusSummary(aggregateBalance?: number) {
+    if (bonusSummaryLoading.value) {
+      pendingAggregateBalance = aggregateBalance
+      return
+    }
+
+    bonusSummaryLoading.value = true
+    try {
+      const response = await paymentAPI.getCheckoutInfo()
+      setBonusSummary(response.data, aggregateBalance)
+    } catch (error: unknown) {
+      console.error('[payment] Failed to fetch bonus summary:', error)
+    } finally {
+      bonusSummaryLoading.value = false
+      if (pendingAggregateBalance !== undefined) {
+        const nextBalance = pendingAggregateBalance
+        pendingAggregateBalance = undefined
+        void fetchBonusSummary(nextBalance)
+      }
+    }
+  }
+
   /** Create a new order and set it as current */
   async function createOrder(params: CreateOrderRequest) {
     const response = await paymentAPI.createOrder(params)
@@ -90,10 +130,18 @@ export const usePaymentStore = defineStore('payment', () => {
     config,
     currentOrder,
     plans,
+    bonusBalance,
+    permanentBalance,
+    nearestBonusExpiry,
+    nearestBonusExpiryAmount,
+    bonusSummaryLoaded,
     configLoading,
     configLoaded,
+    bonusSummaryLoading,
     fetchConfig,
     fetchPlans,
+    setBonusSummary,
+    fetchBonusSummary,
     createOrder,
     pollOrderStatus,
     clearCurrentOrder

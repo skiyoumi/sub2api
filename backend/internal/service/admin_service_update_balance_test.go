@@ -193,3 +193,21 @@ func TestAdminService_UpdateUserBalance_AffiliateFailureDoesNotRollbackRecharge(
 	require.Equal(t, []adminRechargeAffiliateAccrual{{userID: 7, amount: 5}}, affiliate.calls)
 	require.Len(t, redeemRepo.created, 1)
 }
+
+func TestAdminService_UpdateUserBalance_RejectsBonusForNonAddOperation(t *testing.T) {
+	baseRepo := &userRepoStub{user: &User{ID: 7, Balance: 10}}
+	svc := &adminServiceImpl{userRepo: &balanceUserRepoStub{userRepoStub: baseRepo}}
+
+	_, err := svc.UpdateUserBalance(context.Background(), 7, 5, "subtract", "", AdminBalanceBonus{Amount: 1, ValidityDays: 30})
+
+	require.EqualError(t, err, "bonus amount is only supported for add operations")
+}
+
+func TestAdminService_UpdateUserBalance_RejectsInvalidBonusValidity(t *testing.T) {
+	baseRepo := &userRepoStub{user: &User{ID: 7, Balance: 10}}
+	svc := &adminServiceImpl{userRepo: &balanceUserRepoStub{userRepoStub: baseRepo}}
+
+	_, err := svc.UpdateUserBalance(context.Background(), 7, 5, "add", "", AdminBalanceBonus{Amount: 1, ValidityDays: 0})
+
+	require.EqualError(t, err, "bonus validity days must be between 1 and 3650")
+}

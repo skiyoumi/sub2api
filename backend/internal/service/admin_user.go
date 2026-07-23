@@ -16,6 +16,7 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/shopspring/decimal"
 )
 
 // User management implementations
@@ -492,29 +493,71 @@ func (s *adminServiceImpl) BatchUpdateLimits(ctx context.Context, userIDs []int6
 	return affected, nil
 }
 
-func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string) (*User, error) {
+func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string, bonus ...AdminBalanceBonus) (*User, error) {
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 
 	oldBalance := user.Balance
-
-	switch operation {
-	case "set":
-		user.Balance = balance
-	case "add":
-		user.Balance += balance
-	case "subtract":
-		user.Balance -= balance
+	adjustmentCode := ""
+	var bonusExpiresAt *time.Time
+	bonusAmount := 0.0
+	bonusValidityDays := 0
+	if len(bonus) > 0 {
+		bonusAmount = bonus[0].Amount
+		bonusValidityDays = bonus[0].ValidityDays
 	}
-
-	if user.Balance < 0 {
-		return nil, fmt.Errorf("balance cannot be negative, current balance: %.2f, requested operation would result in: %.2f", oldBalance, user.Balance)
+	if bonusAmount < 0 || bonusValidityDays < 0 {
+		return nil, fmt.Errorf("bonus amount and validity cannot be negative")
 	}
+	if bonusAmount > 0 {
+		if operation != "add" {
+			return nil, fmt.Errorf("bonus amount is only supported for add operations")
+		}
+		if bonusValidityDays < 1 || bonusValidityDays > 3650 {
+			return nil, fmt.Errorf("bonus validity days must be between 1 and 3650")
+		}
+		if s.bonusWallet == nil {
+			return nil, fmt.Errorf("bonus wallet is not configured")
+		}
+		adjustmentCode, err = GenerateRedeemCode()
+		if err != nil {
+			return nil, fmt.Errorf("generate admin bonus source id: %w", err)
+		}
+		grantResult, grantErr := s.bonusWallet.GrantForAdmin(ctx, AdminBonusGrantInput{
+			UserID:          userID,
+			SourceID:        adjustmentCode,
+			PermanentAmount: decimal.NewFromFloat(balance),
+			BonusAmount:     decimal.NewFromFloat(bonusAmount),
+			ValidityDays:    bonusValidityDays,
+			GrantedAt:       time.Now(),
+		})
+		if grantErr != nil {
+			return nil, grantErr
+		}
+		bonusExpiresAt = &grantResult.BonusExpiresAt
+		user, err = s.userRepo.GetByID(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		switch operation {
+		case "set":
+			user.Balance = balance
+		case "add":
+			user.Balance += balance
+		case "subtract":
+			user.Balance -= balance
+		}
 
-	if err := s.userRepo.Update(ctx, user); err != nil {
-		return nil, err
+		if user.Balance < 0 {
+			return nil, fmt.Errorf("balance cannot be negative, current balance: %.2f, requested operation would result in: %.2f", oldBalance, user.Balance)
+		}
+
+		if err := s.userRepo.Update(ctx, user); err != nil {
+			return nil, err
+		}
 	}
 	balanceDiff := user.Balance - oldBalance
 	if s.authCacheInvalidator != nil && balanceDiff != 0 {
@@ -533,19 +576,31 @@ func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, 
 	}
 
 	if balanceDiff != 0 {
-		code, err := GenerateRedeemCode()
-		if err != nil {
-			logger.LegacyPrintf("service.admin", "failed to generate adjustment redeem code: %v", err)
-			return user, nil
+		code := adjustmentCode
+		if code == "" {
+			code, err = GenerateRedeemCode()
+			if err != nil {
+				logger.LegacyPrintf("service.admin", "failed to generate adjustment redeem code: %v", err)
+				return user, nil
+			}
 		}
 
+		adjustmentNotes := notes
+		if bonusAmount > 0 && bonusExpiresAt != nil {
+			bonusDetail := fmt.Sprintf("Permanent $%.2f; bonus $%.2f; bonus expires %s", balance, bonusAmount, bonusExpiresAt.Format("2006-01-02 15:04"))
+			if strings.TrimSpace(adjustmentNotes) == "" {
+				adjustmentNotes = bonusDetail
+			} else {
+				adjustmentNotes += "; " + bonusDetail
+			}
+		}
 		adjustmentRecord := &RedeemCode{
 			Code:   code,
 			Type:   AdjustmentTypeAdminBalance,
 			Value:  balanceDiff,
 			Status: StatusUsed,
 			UsedBy: &user.ID,
-			Notes:  notes,
+			Notes:  adjustmentNotes,
 		}
 		now := time.Now()
 		adjustmentRecord.UsedAt = &now
@@ -674,12 +729,20 @@ func (s *adminServiceImpl) GetUserUsageStats(ctx context.Context, userID int64, 
 // GetUserBalanceHistory returns paginated balance/concurrency change records for a user.
 func (s *adminServiceImpl) GetUserBalanceHistory(ctx context.Context, userID int64, page, pageSize int, codeType string) ([]RedeemCode, int64, float64, error) {
 	params := pagination.PaginationParams{Page: page, PageSize: pageSize}
+	if codeType == "package_balance" {
+		codes, total, err := s.listPackageBalanceHistory(ctx, userID, params)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		totalRecharged, err := s.sumUserBalanceRecharges(ctx, userID)
+		return codes, total, totalRecharged, err
+	}
 	if codeType == RedeemTypeAffiliateBalance {
 		codes, total, err := s.listAffiliateBalanceHistory(ctx, userID, params)
 		if err != nil {
 			return nil, 0, 0, err
 		}
-		totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
+		totalRecharged, err := s.sumUserBalanceRecharges(ctx, userID)
 		if err != nil {
 			return nil, 0, 0, err
 		}
@@ -696,11 +759,18 @@ func (s *adminServiceImpl) GetUserBalanceHistory(ctx context.Context, userID int
 	}
 	total := result.Total
 	// Aggregate total recharged amount (only once, regardless of type filter)
-	totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
+	totalRecharged, err := s.sumUserBalanceRecharges(ctx, userID)
 	if err != nil {
 		return nil, 0, 0, err
 	}
 	return codes, total, totalRecharged, nil
+}
+
+func (s *adminServiceImpl) GetUserBonusWalletSummary(ctx context.Context, userID int64) (*BonusWalletSummary, error) {
+	if s == nil || s.bonusWallet == nil {
+		return &BonusWalletSummary{Balance: decimal.Zero, NearestExpiryAmount: decimal.Zero}, nil
+	}
+	return s.bonusWallet.GetSummary(ctx, userID)
 }
 
 func (s *adminServiceImpl) getAllUserBalanceHistory(ctx context.Context, userID int64, params pagination.PaginationParams) ([]RedeemCode, int64, float64, error) {
@@ -717,13 +787,89 @@ func (s *adminServiceImpl) getAllUserBalanceHistory(ctx context.Context, userID 
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	codes := mergeBalanceHistoryCodes(redeemCodes, affiliateCodes, params)
-
-	totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
+	packageCodes, packageTotal, err := s.listPackageBalanceHistory(ctx, userID, pagination.PaginationParams{Page: 1, PageSize: needed})
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	return codes, redeemTotal + affiliateTotal, totalRecharged, nil
+	codes := mergeBalanceHistorySources(params, redeemCodes, affiliateCodes, packageCodes)
+
+	totalRecharged, err := s.sumUserBalanceRecharges(ctx, userID)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	return codes, redeemTotal + affiliateTotal + packageTotal, totalRecharged, nil
+}
+
+func (s *adminServiceImpl) listPackageBalanceHistory(ctx context.Context, userID int64, params pagination.PaginationParams) ([]RedeemCode, int64, error) {
+	rows, err := s.entClient.QueryContext(ctx, `
+SELECT id, out_trade_no, amount::double precision, base_amount::double precision,
+       bonus_amount::double precision, COALESCE(completed_at, paid_at, created_at)
+FROM payment_orders
+WHERE user_id = $1 AND recharge_package_id IS NOT NULL AND recharge_package_id <> '' AND bonus_amount > 0
+  AND status IN ($2, $3, $4)
+ORDER BY COALESCE(completed_at, paid_at, created_at) DESC, id DESC
+OFFSET $5 LIMIT $6`, userID, OrderStatusPaid, OrderStatusRecharging, OrderStatusCompleted, params.Offset(), params.Limit())
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	codes := make([]RedeemCode, 0, params.Limit())
+	for rows.Next() {
+		var id int64
+		var code string
+		var amount, baseAmount, bonusAmount float64
+		var occurredAt time.Time
+		if err := rows.Scan(&id, &code, &amount, &baseAmount, &bonusAmount, &occurredAt); err != nil {
+			return nil, 0, err
+		}
+		usedBy, usedAt := userID, occurredAt
+		notes := fmt.Sprintf("package recharge: base $%.2f", baseAmount)
+		if bonusAmount > 0 {
+			notes += fmt.Sprintf(" + bonus $%.2f", bonusAmount)
+		}
+		codes = append(codes, RedeemCode{
+			ID: -(1 << 60) - id, Code: code, Type: "package_balance", Value: amount,
+			Status: StatusUsed, UsedBy: &usedBy, UsedAt: &usedAt, CreatedAt: occurredAt, Notes: notes,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	var total int64
+	countRows, err := s.entClient.QueryContext(ctx, `
+SELECT COUNT(*) FROM payment_orders
+WHERE user_id = $1 AND recharge_package_id IS NOT NULL AND recharge_package_id <> '' AND bonus_amount > 0
+  AND status IN ($2, $3, $4)`, userID, OrderStatusPaid, OrderStatusRecharging, OrderStatusCompleted)
+	if err != nil {
+		return nil, 0, err
+	}
+	if countRows.Next() {
+		err = countRows.Scan(&total)
+	}
+	_ = countRows.Close()
+	return codes, total, err
+}
+
+func (s *adminServiceImpl) sumUserBalanceRecharges(ctx context.Context, userID int64) (float64, error) {
+	redeemTotal, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	rows, err := s.entClient.QueryContext(ctx, `
+SELECT COALESCE(SUM(amount), 0)::double precision FROM payment_orders
+WHERE user_id = $1 AND recharge_package_id IS NOT NULL AND recharge_package_id <> '' AND bonus_amount > 0
+  AND status IN ($2, $3, $4)`, userID, OrderStatusPaid, OrderStatusRecharging, OrderStatusCompleted)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	var packageTotal float64
+	if rows.Next() {
+		err = rows.Scan(&packageTotal)
+	}
+	return redeemTotal + packageTotal, err
 }
 
 func (s *adminServiceImpl) listRedeemBalanceHistoryForMerge(ctx context.Context, userID int64, needed int) ([]RedeemCode, int64, error) {
@@ -861,7 +1007,14 @@ WHERE user_id = $1
 }
 
 func mergeBalanceHistoryCodes(redeemCodes, affiliateCodes []RedeemCode, params pagination.PaginationParams) []RedeemCode {
-	combined := append(append([]RedeemCode{}, redeemCodes...), affiliateCodes...)
+	return mergeBalanceHistorySources(params, redeemCodes, affiliateCodes)
+}
+
+func mergeBalanceHistorySources(params pagination.PaginationParams, sources ...[]RedeemCode) []RedeemCode {
+	combined := make([]RedeemCode, 0)
+	for _, source := range sources {
+		combined = append(combined, source...)
+	}
 	sort.SliceStable(combined, func(i, j int) bool {
 		return redeemCodeHistoryTime(combined[i]).After(redeemCodeHistoryTime(combined[j]))
 	})

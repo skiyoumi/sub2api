@@ -90,9 +90,11 @@ type UpdateUserRequest struct {
 
 // UpdateBalanceRequest represents balance update request
 type UpdateBalanceRequest struct {
-	Balance   float64 `json:"balance" binding:"required,gt=0"`
-	Operation string  `json:"operation" binding:"required,oneof=set add subtract"`
-	Notes     string  `json:"notes"`
+	Balance           float64 `json:"balance" binding:"gte=0"`
+	Operation         string  `json:"operation" binding:"required,oneof=set add subtract"`
+	Notes             string  `json:"notes"`
+	BonusAmount       float64 `json:"bonus_amount"`
+	BonusValidityDays int     `json:"bonus_validity_days"`
 }
 
 type BindUserAuthIdentityRequest struct {
@@ -242,7 +244,6 @@ func (h *UserHandler) BindAuthIdentity(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-
 	input := service.AdminBindAuthIdentityInput{
 		ProviderType:    req.ProviderType,
 		ProviderKey:     req.ProviderKey,
@@ -395,6 +396,14 @@ func (h *UserHandler) UpdateBalance(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if req.BonusAmount < 0 || req.BonusValidityDays < 0 {
+		response.BadRequest(c, "bonus amount and validity cannot be negative")
+		return
+	}
+	if (req.Operation == "add" && req.Balance <= 0 && req.BonusAmount <= 0) || (req.Operation != "add" && req.Balance <= 0) {
+		response.BadRequest(c, "balance or bonus amount must be greater than zero")
+		return
+	}
 
 	idempotencyPayload := struct {
 		UserID int64                `json:"user_id"`
@@ -404,7 +413,11 @@ func (h *UserHandler) UpdateBalance(c *gin.Context) {
 		Body:   req,
 	}
 	executeAdminIdempotentJSON(c, "admin.users.balance.update", idempotencyPayload, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		user, execErr := h.adminService.UpdateUserBalance(ctx, userID, req.Balance, req.Operation, req.Notes)
+		var bonus []service.AdminBalanceBonus
+		if req.BonusAmount > 0 {
+			bonus = []service.AdminBalanceBonus{{Amount: req.BonusAmount, ValidityDays: req.BonusValidityDays}}
+		}
+		user, execErr := h.adminService.UpdateUserBalance(ctx, userID, req.Balance, req.Operation, req.Notes, bonus...)
 		if execErr != nil {
 			return nil, execErr
 		}
@@ -477,6 +490,11 @@ func (h *UserHandler) GetBalanceHistory(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	bonusSummary, err := h.adminService.GetUserBonusWalletSummary(c.Request.Context(), userID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 
 	// Convert to admin DTO (includes notes field for admin visibility)
 	out := make([]dto.AdminRedeemCode, 0, len(codes))
@@ -490,12 +508,15 @@ func (h *UserHandler) GetBalanceHistory(c *gin.Context) {
 		pages = 1
 	}
 	response.Success(c, gin.H{
-		"items":           out,
-		"total":           total,
-		"page":            page,
-		"page_size":       pageSize,
-		"pages":           pages,
-		"total_recharged": totalRecharged,
+		"items":                       out,
+		"total":                       total,
+		"page":                        page,
+		"page_size":                   pageSize,
+		"pages":                       pages,
+		"total_recharged":             totalRecharged,
+		"bonus_balance":               bonusSummary.Balance.InexactFloat64(),
+		"nearest_bonus_expiry":        bonusSummary.NearestExpiry,
+		"nearest_bonus_expiry_amount": bonusSummary.NearestExpiryAmount.InexactFloat64(),
 	})
 }
 

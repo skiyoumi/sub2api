@@ -155,16 +155,19 @@
                   <div class="grid grid-cols-2 gap-3">
                     <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-800">
                       <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.currentBalance') }}</p>
-                      <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">{{ (user?.balance || 0).toFixed(2) }}</p>
+                      <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">{{ permanentBalance.toFixed(2) }}</p>
                     </div>
                     <div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-950/30">
                       <p class="text-xs text-primary-600 dark:text-primary-400">{{ t('payment.rechargePackages.balanceAfter') }}</p>
                       <p class="mt-1 text-lg font-bold text-primary-700 dark:text-primary-300">{{ estimatedBalance.toFixed(2) }}</p>
                     </div>
                   </div>
-                  <p v-if="(checkout.bonus_balance || 0) > 0" class="mt-3 text-xs text-amber-600 dark:text-amber-300">
-                    {{ t('payment.rechargePackages.currentBonus', { amount: checkout.bonus_balance?.toFixed(2) }) }}
-                  </p>
+                  <div v-if="currentBonusBalance > 0" class="mt-3 space-y-1 text-xs text-red-600 dark:text-red-400">
+                    <p>{{ t('payment.rechargePackages.currentBonus', { amount: currentBonusBalance.toFixed(2) }) }}</p>
+                    <p v-if="checkout.nearest_bonus_expiry && nearestBonusExpiryAmount > 0">
+                      {{ t('payment.rechargePackages.bonusExpiry', { amount: nearestBonusExpiryAmount.toFixed(2), date: formatDateTimeToMinute(checkout.nearest_bonus_expiry) }) }}
+                    </p>
+                  </div>
                 </section>
 
                 <section v-if="checkout.help_text || checkout.help_image_url || supportContact" class="recharge-help-panel">
@@ -399,6 +402,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { DEFAULT_PAYMENT_CURRENCY, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import { planValiditySuffix as validitySuffixOf } from '@/components/payment/validity'
+import { formatDateTimeToMinute } from '@/utils/format'
 import type { PaymentMethodOption } from '@/components/payment/PaymentMethodSelector.vue'
 import { buildPaymentErrorToastMessage, describePaymentScenarioError } from './paymentUx'
 import { hasWechatResumeQuery, parseWechatResumeRoute, stripWechatResumeQuery } from './paymentWechatResume'
@@ -653,8 +657,14 @@ const subscriptionUsdToCnyRate = computed(() => {
   const rate = checkout.value.subscription_usd_to_cny_rate
   return Number.isFinite(rate) && rate > 0 ? rate : 0
 })
-const creditedAmount = computed(() => Math.round((validAmount.value * balanceRechargeMultiplier.value + (selectedRechargePackage.value?.bonus_amount || 0)) * 100) / 100)
-const estimatedBalance = computed(() => Math.round(((user.value?.balance || 0) + creditedAmount.value) * 100) / 100)
+const currentBonusBalance = computed(() => Math.max(0, checkout.value.bonus_balance || 0))
+const nearestBonusExpiryAmount = computed(() => Math.max(0, checkout.value.nearest_bonus_expiry_amount || 0))
+const permanentBalance = computed(() => paymentStore.bonusSummaryLoaded
+  ? Math.round(paymentStore.permanentBalance * 100) / 100
+  : Math.max(0, Math.round((user.value?.balance || 0) * 100) / 100))
+const permanentCreditedAmount = computed(() => Math.round((validAmount.value * balanceRechargeMultiplier.value) * 100) / 100)
+const creditedAmount = computed(() => Math.round((permanentCreditedAmount.value + (selectedRechargePackage.value?.bonus_amount || 0)) * 100) / 100)
+const estimatedBalance = computed(() => Math.round((permanentBalance.value + permanentCreditedAmount.value) * 100) / 100)
 
 // Adaptive grid: center single card, 2-col for 2 plans, 3-col for 3+
 const planGridClass = computed(() => {
@@ -1079,6 +1089,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
     } else if (apiErr.reason === 'RECHARGE_PACKAGE_CHANGED' || apiErr.reason === 'RECHARGE_PACKAGE_DISABLED') {
       const refreshed = await paymentAPI.getCheckoutInfo()
       checkout.value = refreshed.data
+      paymentStore.setBonusSummary(refreshed.data, user.value?.balance || 0)
       selectedRechargePackageId.value = ''
       errorMessage.value = t('payment.rechargePackages.changed')
       errorHintMessage.value = ''
@@ -1262,6 +1273,7 @@ onMounted(async () => {
   try {
     const res = await paymentAPI.getCheckoutInfo()
     checkout.value = res.data
+    paymentStore.setBonusSummary(res.data, user.value?.balance || 0)
     if (checkout.value.recharge_packages_enabled && rechargePackages.value.length > 0) {
       selectRechargePackage(rechargePackages.value.find(pkg => pkg.recommended) || rechargePackages.value[0])
     }
@@ -1565,76 +1577,87 @@ onMounted(async () => {
   box-shadow: 0 2px 8px rgb(15 23 42 / 0.04);
 }
 
-:global(.dark) .recharge-checkout-shell {
+html.dark .recharge-checkout-shell {
   border-color: #334155;
   background: linear-gradient(135deg, #111827, #0f2629);
   box-shadow: 0 14px 36px rgb(0 0 0 / 0.22);
 }
 
-:global(.dark) .recharge-cashier-header {
+html.dark .recharge-cashier-header {
   border-color: #334155;
 }
 
-:global(.dark) .recharge-cashier-header h1 {
+html.dark .recharge-cashier-header h1 {
   color: #f8fafc;
 }
 
-:global(.dark) .recharge-security-badge {
+html.dark .recharge-cashier-header p,
+html.dark .recharge-step-header p {
+  color: #94a3b8;
+}
+
+html.dark .recharge-security-badge {
   border-color: #065f46;
   background: rgb(6 78 59 / 0.42);
   color: #6ee7b7;
 }
 
-:global(.dark) .recharge-panel,
-:global(.dark) .recharge-summary-panel,
-:global(.dark) .recharge-account-panel,
-:global(.dark) .recharge-package-card {
+html.dark .recharge-panel,
+html.dark .recharge-summary-panel,
+html.dark .recharge-account-panel,
+html.dark .recharge-package-card {
   border-color: #334155;
   background: #111827;
 }
 
-:global(.dark) .recharge-step-header h2 {
+html.dark .recharge-step-header h2 {
   color: #f8fafc;
 }
 
-:global(.dark) .recharge-package-card.is-selected {
+html.dark .recharge-package-card:hover {
+  border-color: #475569;
+  background: #172033;
+  box-shadow: 0 5px 18px rgb(0 0 0 / 0.2);
+}
+
+html.dark .recharge-package-card.is-selected {
   border-color: #60a5fa;
   box-shadow: 0 0 0 1px #60a5fa;
 }
 
-:global(.dark) .recharge-recommended {
+html.dark .recharge-recommended {
   border-color: #7c2d12;
   background: #431407;
   color: #fdba74;
 }
 
-:global(.dark) .recharge-bonus-pill {
+html.dark .recharge-bonus-pill {
   background: rgb(6 78 59 / 0.5);
   color: #6ee7b7;
 }
 
-:global(.dark) .recharge-bonus-notice {
+html.dark .recharge-bonus-notice {
   border-color: #065f46;
   background: rgb(6 78 59 / 0.36);
   color: #a7f3d0;
 }
 
-:global(.dark) .recharge-help-panel {
+html.dark .recharge-help-panel {
   border-color: #854d0e;
   background: rgb(69 26 3 / 0.35);
 }
 
-:global(.dark) .recharge-contact-button {
+html.dark .recharge-contact-button {
   border-color: #92400e;
   background: rgb(120 53 15 / 0.22);
   color: #fdba74;
 }
 
-:global(.dark) .recharge-contact-button:hover {
+html.dark .recharge-contact-button:hover {
   background: rgb(120 53 15 / 0.4);
 }
 
-:global(.dark) .recharge-risk-footer {
+html.dark .recharge-risk-footer {
   border-color: #334155;
   background: #111827;
   color: #94a3b8;

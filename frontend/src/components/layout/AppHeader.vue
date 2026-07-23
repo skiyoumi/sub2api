@@ -82,6 +82,14 @@
               <span class="text-gray-500 dark:text-dark-400">{{ balanceFrozenText }}</span>
               <span class="font-medium text-amber-700 dark:text-amber-200">{{ formatHeaderMoney(frozenBalance) }}</span>
             </div>
+            <template v-if="bonusBalance > 0">
+              <div class="mt-2 text-right font-medium text-red-600 dark:text-red-400">
+                {{ t('payment.rechargePackages.currentBonus', { amount: bonusBalance.toFixed(2) }) }}
+              </div>
+              <div v-if="bonusExpiryText" class="mt-1 text-right text-red-500 dark:text-red-400">
+                {{ bonusExpiryText }}
+              </div>
+            </template>
             <div class="mt-2 border-t border-gray-100 pt-2 dark:border-dark-700">
               <div class="flex items-center justify-between">
                 <span class="text-gray-500 dark:text-dark-400">{{ balanceTotalText }}</span>
@@ -139,6 +147,12 @@
                 </div>
                 <div v-if="frozenBalance > 0" class="mt-1 text-xs text-amber-600 dark:text-amber-300">
                   {{ balanceFrozenText }} {{ formatHeaderMoney(frozenBalance) }}
+                </div>
+                <div v-if="bonusBalance > 0" class="mt-1 text-xs text-red-600 dark:text-red-400">
+                  {{ t('payment.rechargePackages.currentBonus', { amount: bonusBalance.toFixed(2) }) }}
+                </div>
+                <div v-if="bonusExpiryText" class="mt-1 text-xs text-red-500 dark:text-red-400">
+                  {{ bonusExpiryText }}
                 </div>
               </div>
 
@@ -240,16 +254,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
+import { usePaymentStore } from '@/stores/payment'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeUrl } from '@/utils/url'
+import { formatDateTimeToMinute } from '@/utils/format'
 
 const router = useRouter()
 const route = useRoute()
@@ -258,6 +274,7 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
 const onboardingStore = useOnboardingStore()
+const paymentStore = usePaymentStore()
 
 const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
@@ -265,9 +282,17 @@ const dropdownRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
 const docUrl = computed(() => sanitizeUrl(appStore.docUrl))
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
-const availableBalance = computed(() => Number(user.value?.balance || 0))
+const bonusBalance = computed(() => paymentStore.bonusBalance)
+const availableBalance = computed(() => paymentStore.bonusSummaryLoaded ? paymentStore.permanentBalance : Number(user.value?.balance || 0))
 const frozenBalance = computed(() => Number(user.value?.frozen_balance || 0))
 const totalBalance = computed(() => availableBalance.value + frozenBalance.value)
+const bonusExpiryText = computed(() => {
+  if (bonusBalance.value <= 0 || !paymentStore.nearestBonusExpiry || paymentStore.nearestBonusExpiryAmount <= 0) return ''
+  return t('payment.rechargePackages.bonusExpiry', {
+    amount: paymentStore.nearestBonusExpiryAmount.toFixed(2),
+    date: formatDateTimeToMinute(paymentStore.nearestBonusExpiry),
+  })
+})
 const balanceAvailableText = computed(() => t('common.availableBalance') === 'common.availableBalance' ? '可用余额' : t('common.availableBalance'))
 const balanceFrozenText = computed(() => t('common.frozenBalance') === 'common.frozenBalance' ? '冻结金额' : t('common.frozenBalance'))
 const balanceTotalText = computed(() => t('common.totalBalance') === 'common.totalBalance' ? '总余额' : t('common.totalBalance'))
@@ -363,6 +388,14 @@ function handleClickOutside(event: MouseEvent) {
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
 })
+
+watch(
+  () => user.value?.balance,
+  (balance) => {
+    if (balance != null) void paymentStore.fetchBonusSummary(Number(balance))
+  },
+  { immediate: true },
+)
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)

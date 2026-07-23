@@ -81,6 +81,7 @@ export interface CheckoutInfoResponse {
   recharge_packages?: RechargePackage[]
   bonus_balance?: number
   nearest_bonus_expiry?: string | null
+  nearest_bonus_expiry_amount?: number
 }
 
 export interface RechargePackage {

@@ -67,8 +67,12 @@
                   {{ t('profile.accountBalance') }}
                 </p>
                 <p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">
-                  {{ formatCurrency(user?.balance || 0) }}
+                  {{ formatCurrency(permanentBalance) }}
                 </p>
+                <p v-if="bonusBalance > 0" class="mt-1 text-xs text-red-600 dark:text-red-400">
+                  {{ t('payment.rechargePackages.currentBonus', { amount: bonusBalance.toFixed(2) }) }}
+                </p>
+                <p v-if="bonusExpiryText" class="text-[10px] text-red-500 dark:text-red-400">{{ bonusExpiryText }}</p>
               </div>
               <div
                 data-testid="profile-overview-metric-concurrency"
@@ -182,6 +186,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { usePaymentStore } from '@/stores/payment'
+import { formatDateTimeToMinute } from '@/utils/format'
 import Icon from '@/components/icons/Icon.vue'
 import ProfileAvatarCard from '@/components/user/profile/ProfileAvatarCard.vue'
 import ProfileEditForm from '@/components/user/profile/ProfileEditForm.vue'
@@ -208,6 +214,16 @@ const props = withDefaults(defineProps<{
 })
 
 const { t } = useI18n()
+const paymentStore = usePaymentStore()
+const bonusBalance = computed(() => paymentStore.bonusBalance)
+const permanentBalance = computed(() => paymentStore.bonusSummaryLoaded ? paymentStore.permanentBalance : Number(props.user?.balance || 0))
+const bonusExpiryText = computed(() => {
+  if (bonusBalance.value <= 0 || !paymentStore.nearestBonusExpiry || paymentStore.nearestBonusExpiryAmount <= 0) return ''
+  return t('payment.rechargePackages.bonusExpiry', {
+    amount: paymentStore.nearestBonusExpiryAmount.toFixed(2),
+    date: formatDateTimeToMinute(paymentStore.nearestBonusExpiry),
+  })
+})
 
 function normalizeBindingStatus(binding: boolean | UserAuthBindingStatus | undefined): boolean | null {
   if (typeof binding === 'boolean') {

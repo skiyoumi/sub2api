@@ -13,6 +13,7 @@ import (
 )
 
 const bonusGrantSourcePaymentOrder = "payment_order"
+const bonusGrantSourceAdminRecharge = "admin_recharge"
 
 type BonusGrantInput struct {
 	UserID          int64
@@ -29,9 +30,19 @@ type BonusGrantResult struct {
 	Applied        bool
 }
 
+type AdminBonusGrantInput struct {
+	UserID          int64
+	SourceID        string
+	PermanentAmount decimal.Decimal
+	BonusAmount     decimal.Decimal
+	ValidityDays    int
+	GrantedAt       time.Time
+}
+
 type BonusWalletSummary struct {
-	Balance       decimal.Decimal
-	NearestExpiry *time.Time
+	Balance             decimal.Decimal
+	NearestExpiry       *time.Time
+	NearestExpiryAmount decimal.Decimal
 }
 
 type BonusSpendGrant struct {
@@ -79,6 +90,98 @@ type BonusWallet struct {
 
 func NewBonusWallet(client *dbent.Client) *BonusWallet {
 	return &BonusWallet{client: client}
+}
+
+// GrantForAdmin atomically credits a manual deposit and records its expiring bonus grant.
+func (w *BonusWallet) GrantForAdmin(ctx context.Context, input AdminBonusGrantInput) (*BonusGrantResult, error) {
+	if w == nil || w.client == nil {
+		return nil, errors.New("bonus wallet is not configured")
+	}
+	if input.UserID <= 0 || input.SourceID == "" || input.PermanentAmount.IsNegative() || !input.BonusAmount.IsPositive() {
+		return nil, fmt.Errorf("invalid admin bonus grant input")
+	}
+	if input.ValidityDays < 1 || input.ValidityDays > 3650 {
+		return nil, fmt.Errorf("bonus validity days must be between 1 and 3650")
+	}
+	grantedAt := input.GrantedAt.UTC().Truncate(time.Microsecond)
+	if input.GrantedAt.IsZero() {
+		grantedAt = time.Now().UTC().Truncate(time.Microsecond)
+	}
+	expiresAt := grantedAt.Add(time.Duration(input.ValidityDays) * 24 * time.Hour)
+
+	tx, err := w.client.Tx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin admin bonus grant transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	client := tx.Client()
+
+	var currentBalance string
+	rows, err := client.QueryContext(ctx, `SELECT balance::text FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, input.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("lock admin bonus user: %w", err)
+	}
+	if rows.Next() {
+		err = rows.Scan(&currentBalance)
+	} else {
+		err = sql.ErrNoRows
+	}
+	_ = rows.Close()
+	if err != nil {
+		return nil, fmt.Errorf("lock admin bonus user: %w", err)
+	}
+
+	var grantID int64
+	grantRows, err := client.QueryContext(ctx, `
+		INSERT INTO wallet_bonus_grants (
+			user_id, source_type, source_id, initial_amount, remaining_amount, expires_at
+		) VALUES ($1, $2, $3, $4, $4, $5)
+		RETURNING id`, input.UserID, bonusGrantSourceAdminRecharge, input.SourceID, input.BonusAmount.String(), expiresAt)
+	if err != nil {
+		return nil, fmt.Errorf("create admin bonus grant: %w", err)
+	}
+	if grantRows.Next() {
+		err = grantRows.Scan(&grantID)
+	} else {
+		err = sql.ErrNoRows
+	}
+	_ = grantRows.Close()
+	if err != nil {
+		return nil, fmt.Errorf("read admin bonus grant: %w", err)
+	}
+
+	credit := input.PermanentAmount.Add(input.BonusAmount)
+	var balanceAfter string
+	updatedRows, err := client.QueryContext(ctx, `
+		UPDATE users SET balance = balance + $1, updated_at = NOW()
+		WHERE id = $2 AND deleted_at IS NULL
+		RETURNING balance::text`, credit.String(), input.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("credit admin bonus wallet: %w", err)
+	}
+	if updatedRows.Next() {
+		err = updatedRows.Scan(&balanceAfter)
+	} else {
+		err = sql.ErrNoRows
+	}
+	_ = updatedRows.Close()
+	if err != nil {
+		return nil, fmt.Errorf("credit admin bonus wallet: %w", err)
+	}
+
+	requestID := "admin_recharge:" + input.SourceID + ":grant"
+	if _, err := client.ExecContext(ctx, `
+		INSERT INTO wallet_bonus_transactions (
+			user_id, grant_id, type, amount, request_id, source_type, source_id, balance_after
+		) VALUES ($1, $2, 'GRANT', $3, $4, $5, $6, $7)`,
+		input.UserID, grantID, input.BonusAmount.String(), requestID,
+		bonusGrantSourceAdminRecharge, input.SourceID, balanceAfter); err != nil {
+		return nil, fmt.Errorf("record admin bonus grant: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit admin bonus grant: %w", err)
+	}
+	return &BonusGrantResult{GrantID: grantID, BonusExpiresAt: expiresAt, Applied: true}, nil
 }
 
 func (w *BonusWallet) GrantForPayment(ctx context.Context, input BonusGrantInput) (*BonusGrantResult, error) {
@@ -186,8 +289,10 @@ func (w *BonusWallet) GrantForPayment(ctx context.Context, input BonusGrantInput
 		bonusGrantSourcePaymentOrder, strconv.FormatInt(input.PaymentOrderID, 10), balanceAfter); err != nil {
 		return nil, fmt.Errorf("record payment bonus grant: %w", err)
 	}
+	// Keep payment_orders.updated_at unchanged: the fulfillment lease uses it
+	// as its optimistic-concurrency version until markCompleted runs.
 	if _, err := client.ExecContext(ctx, `
-		UPDATE payment_orders SET bonus_expires_at = $1, updated_at = NOW() WHERE id = $2`,
+		UPDATE payment_orders SET bonus_expires_at = $1 WHERE id = $2`,
 		expiresAt, input.PaymentOrderID); err != nil {
 		return nil, fmt.Errorf("persist payment bonus expiry: %w", err)
 	}
@@ -202,19 +307,30 @@ func (w *BonusWallet) GetSummary(ctx context.Context, userID int64) (*BonusWalle
 		return nil, errors.New("bonus wallet is not configured")
 	}
 	rows, err := w.client.QueryContext(ctx, `
-		SELECT COALESCE(SUM(remaining_amount), 0)::text, MIN(expires_at)
-		FROM wallet_bonus_grants
-		WHERE user_id = $1 AND status = 'ACTIVE' AND remaining_amount > 0 AND expires_at > NOW()`, userID)
+		WITH active_grants AS (
+			SELECT remaining_amount, expires_at
+			FROM wallet_bonus_grants
+			WHERE user_id = $1 AND status = 'ACTIVE' AND remaining_amount > 0 AND expires_at > NOW()
+		), nearest AS (
+			SELECT MIN(expires_at) AS expires_at FROM active_grants
+		)
+		SELECT
+			COALESCE(SUM(active_grants.remaining_amount), 0)::text,
+			nearest.expires_at,
+			COALESCE(SUM(active_grants.remaining_amount) FILTER (WHERE active_grants.expires_at = nearest.expires_at), 0)::text
+		FROM nearest
+		LEFT JOIN active_grants ON TRUE
+		GROUP BY nearest.expires_at`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("query bonus wallet summary: %w", err)
 	}
 	defer rows.Close()
-	var raw string
+	var raw, rawNearestAmount string
 	var nearest sql.NullTime
 	if !rows.Next() {
 		return nil, sql.ErrNoRows
 	}
-	if err := rows.Scan(&raw, &nearest); err != nil {
+	if err := rows.Scan(&raw, &nearest, &rawNearestAmount); err != nil {
 		return nil, fmt.Errorf("scan bonus wallet summary: %w", err)
 	}
 	balance, err := decimal.NewFromString(raw)
@@ -222,6 +338,10 @@ func (w *BonusWallet) GetSummary(ctx context.Context, userID int64) (*BonusWalle
 		return nil, fmt.Errorf("parse bonus wallet summary: %w", err)
 	}
 	result := &BonusWalletSummary{Balance: balance}
+	result.NearestExpiryAmount, err = decimal.NewFromString(rawNearestAmount)
+	if err != nil {
+		return nil, fmt.Errorf("parse nearest bonus expiry amount: %w", err)
+	}
 	if nearest.Valid {
 		value := nearest.Time
 		result.NearestExpiry = &value

@@ -175,12 +175,16 @@ export async function updateBalance(
   id: number,
   balance: number,
   operation: 'set' | 'add' | 'subtract' = 'set',
-  notes?: string
+  notes?: string,
+  bonusAmount?: number,
+  bonusValidityDays?: number
 ): Promise<AdminUser> {
   const { data } = await apiClient.post<AdminUser>(`/admin/users/${id}/balance`, {
     balance,
     operation,
-    notes: notes || ''
+    notes: notes || '',
+    bonus_amount: bonusAmount || 0,
+    bonus_validity_days: bonusValidityDays || 0,
   })
   return data
 }
@@ -272,6 +276,9 @@ export interface BalanceHistoryItem {
 // Balance history response extends pagination with total_recharged summary
 export interface BalanceHistoryResponse extends PaginatedResponse<BalanceHistoryItem> {
   total_recharged: number
+  bonus_balance: number
+  nearest_bonus_expiry: string | null
+  nearest_bonus_expiry_amount: number
 }
 
 /**
