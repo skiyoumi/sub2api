@@ -11,8 +11,12 @@
         </div>
         <div>
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.balance') }}</p>
-          <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">${{ formatBalance(balance) }}</p>
+          <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">${{ formatBalance(permanentBalance) }}</p>
           <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('common.available') }}</p>
+          <p v-if="bonusBalance > 0" class="mt-1 text-xs text-red-600 dark:text-red-400">
+            {{ t('payment.rechargePackages.currentBonus', { amount: formatBalance(bonusBalance) }) }}
+          </p>
+          <p v-if="bonusExpiryText" class="text-[10px] text-red-500 dark:text-red-400">{{ bonusExpiryText }}</p>
         </div>
       </div>
     </div>
@@ -226,6 +230,8 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
+import { usePaymentStore } from '@/stores/payment'
+import { formatDateTimeToMinute } from '@/utils/format'
 import type { UserDashboardStats as UserStatsType } from '@/api/usage'
 import type { PlatformQuotaItem } from '@/types'
 
@@ -246,6 +252,16 @@ const props = defineProps<{
   platformQuotas?: PlatformQuotaItem[] | null
 }>()
 const { t } = useI18n()
+const paymentStore = usePaymentStore()
+const bonusBalance = computed(() => paymentStore.bonusBalance)
+const permanentBalance = computed(() => paymentStore.bonusSummaryLoaded ? paymentStore.permanentBalance : props.balance)
+const bonusExpiryText = computed(() => {
+  if (bonusBalance.value <= 0 || !paymentStore.nearestBonusExpiry || paymentStore.nearestBonusExpiryAmount <= 0) return ''
+  return t('payment.rechargePackages.bonusExpiry', {
+    amount: formatBalance(paymentStore.nearestBonusExpiryAmount),
+    date: formatDateTimeToMinute(paymentStore.nearestBonusExpiry),
+  })
+})
 
 const PLATFORM_LABELS: Record<string, string> = {
   anthropic: 'Claude',

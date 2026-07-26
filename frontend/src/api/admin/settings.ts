@@ -16,6 +16,16 @@ export interface DefaultSubscriptionSetting {
   validity_days: number;
 }
 
+export interface AdminRechargePackage {
+  id: string;
+  amount: string;
+  bonus_amount: string;
+  bonus_validity_days: number;
+  recommended: boolean;
+  enabled: boolean;
+  sort_order: number;
+}
+
 // ── 平台限额类型 ──────────────────────────────────────────────────
 export type PlatformType = "anthropic" | "openai" | "gemini" | "antigravity" | "grok"
 export type QuotaWindowType = "daily" | "weekly" | "monthly"
@@ -596,6 +606,9 @@ export interface SystemSettings {
   payment_balance_recharge_multiplier: number;
   payment_subscription_usd_to_cny_rate: number;
   payment_recharge_fee_rate: number;
+  payment_recharge_packages_enabled: boolean;
+  payment_allow_custom_recharge_amount: boolean;
+  payment_recharge_packages: AdminRechargePackage[];
   payment_load_balance_strategy: string;
   payment_product_name_prefix: string;
   payment_product_name_suffix: string;
@@ -878,6 +891,9 @@ export interface UpdateSettingsRequest {
   payment_balance_recharge_multiplier?: number;
   payment_subscription_usd_to_cny_rate?: number;
   payment_recharge_fee_rate?: number;
+  payment_recharge_packages_enabled?: boolean;
+  payment_allow_custom_recharge_amount?: boolean;
+  payment_recharge_packages?: AdminRechargePackage[];
   payment_load_balance_strategy?: string;
   payment_product_name_prefix?: string;
   payment_product_name_suffix?: string;

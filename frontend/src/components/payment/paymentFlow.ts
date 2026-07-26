@@ -50,6 +50,7 @@ export interface PaymentRecoverySnapshot {
   resumeToken: string
   alipayMobilePrecreateDeepLink?: boolean
   createdAt: number
+  rechargePackageId?: string
 }
 
 export interface PaymentLaunchContext {
@@ -81,6 +82,7 @@ export interface BuildCreateOrderPayloadInput {
   paymentType: string
   orderType: OrderType
   planId?: number
+  rechargePackageId?: string
   origin?: string
   isMobile: boolean
   isWechatBrowser: boolean
@@ -139,6 +141,9 @@ export function buildCreateOrderPayload(input: BuildCreateOrderPayloadInput): Cr
   if (input.planId) {
     payload.plan_id = input.planId
   }
+  if (input.rechargePackageId) {
+    payload.recharge_package_id = input.rechargePackageId
+  }
   if (normalizedOrigin) {
     payload.return_url = `${normalizedOrigin}/payment/result`
   }
@@ -169,6 +174,7 @@ export function decidePaymentLaunch(
     paymentMode: (result.payment_mode || '').trim(),
     resumeToken: result.resume_token || '',
     alipayMobilePrecreateDeepLink: result.alipay_mobile_precreate_deep_link === true,
+    rechargePackageId: result.recharge_package_id || '',
   }, context.now)
 
   if (visibleMethod === 'airwallex' && baseState.clientSecret && baseState.intentId) {

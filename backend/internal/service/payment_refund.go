@@ -20,6 +20,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
+	"github.com/shopspring/decimal"
 )
 
 // --- Refund Flow ---
@@ -567,6 +568,24 @@ func (s *PaymentService) markRefundOk(ctx context.Context, p *RefundPlan) (*Refu
 	_, err := s.entClient.PaymentOrder.UpdateOneID(p.OrderID).SetStatus(fs).SetRefundAmount(p.RefundAmount).SetRefundReason(p.Reason).SetRefundAt(now).SetForceRefund(p.Force).Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("mark refund: %w", err)
+	}
+	// Bonus grants are ledger state, so revoke the proportional unconsumed
+	// amount after the gateway has confirmed the refund. The existing balance
+	// deduction already removes the full refund amount from users.balance.
+	if p.Order.OrderType == payment.OrderTypeBalance && s.bonusWallet != nil && p.RefundAmount > 0 {
+		if revoke, revokeErr := s.bonusWallet.RevokeForRefund(ctx, BonusRevokeInput{
+			UserID:         p.Order.UserID,
+			PaymentOrderID: p.OrderID,
+			RefundAmount:   decimal.NewFromFloat(p.RefundAmount),
+			Force:          p.Force,
+		}); revokeErr != nil {
+			slog.Error("bonus refund revoke failed after gateway success", "orderID", p.OrderID, "error", revokeErr)
+			s.writeAuditLog(ctx, p.OrderID, "REFUND_BONUS_REVOKE_FAILED", "admin", map[string]any{"detail": revokeErr.Error()})
+		} else {
+			s.writeAuditLog(ctx, p.OrderID, "REFUND_BONUS_REVOKED", "admin", map[string]any{
+				"targetBonus": revoke.TargetBonus.String(), "revoked": revoke.Revoked.String(), "uncovered": revoke.Uncovered.String(),
+			})
+		}
 	}
 	s.writeAuditLog(ctx, p.OrderID, "REFUND_SUCCESS", "admin", map[string]any{"refundAmount": p.RefundAmount, "reason": p.Reason, "balanceDeducted": p.BalanceToDeduct, "force": p.Force})
 	return &RefundResult{Success: true, BalanceDeducted: p.BalanceToDeduct, SubDaysDeducted: p.SubDaysToDeduct}, nil

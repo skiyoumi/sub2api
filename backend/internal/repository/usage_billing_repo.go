@@ -4,11 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/shopspring/decimal"
 )
 
 type usageBillingRepository struct {
@@ -179,12 +183,14 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 	}
 
 	if cmd.BalanceCost > 0 {
-		newBalance, sufficient, err := deductUsageBillingBalance(ctx, tx, cmd.UserID, cmd.BalanceCost)
+		deduction, err := deductUsageBillingBalanceWithBonus(ctx, tx, cmd.UserID, cmd.BalanceCost, cmd.RequestID)
 		if err != nil {
 			return err
 		}
-		result.NewBalance = &newBalance
-		result.BalanceOverdrafted = !sufficient
+		result.NewBalance = &deduction.NewBalance
+		result.BalanceOverdrafted = !deduction.Sufficient
+		result.BonusSpent = deduction.BonusSpent
+		result.PermanentSpent = deduction.PermanentSpent
 	}
 
 	if cmd.APIKeyQuotaCost > 0 {
@@ -210,6 +216,161 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 	}
 
 	return nil
+}
+
+type usageBillingBalanceDeduction struct {
+	NewBalance     float64
+	Sufficient     bool
+	BonusSpent     float64
+	PermanentSpent float64
+}
+
+type lockedBonusGrant struct {
+	id         int64
+	remaining  decimal.Decimal
+	expiresAt  string
+	sourceType string
+	sourceID   string
+}
+
+func deductUsageBillingBalanceWithBonus(ctx context.Context, tx *sql.Tx, userID int64, amount float64, requestID string) (*usageBillingBalanceDeduction, error) {
+	var rawBalance string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT balance::text FROM users
+		WHERE id = $1 AND deleted_at IS NULL
+		FOR UPDATE`, userID).Scan(&rawBalance); errors.Is(err, sql.ErrNoRows) {
+		return nil, service.ErrUserNotFound
+	} else if err != nil {
+		return nil, err
+	}
+	currentBalance, err := decimal.NewFromString(rawBalance)
+	if err != nil {
+		return nil, fmt.Errorf("parse user balance: %w", err)
+	}
+
+	expiredRows, err := tx.QueryContext(ctx, `
+		SELECT id, remaining_amount::text, source_type, source_id
+		FROM wallet_bonus_grants
+		WHERE user_id = $1 AND status = 'ACTIVE' AND remaining_amount > 0 AND expires_at <= NOW()
+		ORDER BY expires_at, id
+		FOR UPDATE`, userID)
+	if err != nil {
+		return nil, err
+	}
+	expired := decimal.Zero
+	var expiredGrants []lockedBonusGrant
+	for expiredRows.Next() {
+		var grant lockedBonusGrant
+		var raw string
+		if err := expiredRows.Scan(&grant.id, &raw, &grant.sourceType, &grant.sourceID); err != nil {
+			_ = expiredRows.Close()
+			return nil, err
+		}
+		grant.remaining, err = decimal.NewFromString(raw)
+		if err != nil {
+			_ = expiredRows.Close()
+			return nil, err
+		}
+		expired = expired.Add(grant.remaining)
+		expiredGrants = append(expiredGrants, grant)
+	}
+	if err := expiredRows.Err(); err != nil {
+		_ = expiredRows.Close()
+		return nil, err
+	}
+	if err := expiredRows.Close(); err != nil {
+		return nil, err
+	}
+
+	grantRows, err := tx.QueryContext(ctx, `
+		SELECT id, remaining_amount::text, expires_at::text, source_type, source_id
+		FROM wallet_bonus_grants
+		WHERE user_id = $1 AND status = 'ACTIVE' AND remaining_amount > 0 AND expires_at > NOW()
+		ORDER BY expires_at, id
+		FOR UPDATE`, userID)
+	if err != nil {
+		return nil, err
+	}
+	var grants []lockedBonusGrant
+	for grantRows.Next() {
+		var grant lockedBonusGrant
+		var raw string
+		if err := grantRows.Scan(&grant.id, &raw, &grant.expiresAt, &grant.sourceType, &grant.sourceID); err != nil {
+			_ = grantRows.Close()
+			return nil, err
+		}
+		grant.remaining, err = decimal.NewFromString(raw)
+		if err != nil {
+			_ = grantRows.Close()
+			return nil, err
+		}
+		grants = append(grants, grant)
+	}
+	if err := grantRows.Err(); err != nil {
+		_ = grantRows.Close()
+		return nil, err
+	}
+	if err := grantRows.Close(); err != nil {
+		return nil, err
+	}
+
+	spendGrants := make([]service.BonusSpendGrant, 0, len(grants))
+	for _, grant := range grants {
+		spendGrants = append(spendGrants, service.BonusSpendGrant{GrantID: grant.id, Available: grant.remaining})
+	}
+	plan := service.BuildBonusSpendPlan(decimal.NewFromFloat(amount), spendGrants)
+	effectiveBalance := currentBalance.Sub(expired)
+	newBalance := effectiveBalance.Sub(decimal.NewFromFloat(amount))
+
+	for _, grant := range expiredGrants {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE wallet_bonus_grants
+			SET remaining_amount = 0, status = 'EXPIRED', expired_at = NOW(), updated_at = NOW()
+			WHERE id = $1 AND status = 'ACTIVE'`, grant.id); err != nil {
+			return nil, err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO wallet_bonus_transactions
+				(user_id, grant_id, type, amount, request_id, source_type, source_id, balance_after)
+			VALUES ($1, $2, 'EXPIRE', $3, $4, $5, $6, $7)
+			ON CONFLICT (request_id, grant_id, type) DO NOTHING`, userID, grant.id,
+			grant.remaining.String(), "expiry:inline:"+strconv.FormatInt(grant.id, 10), grant.sourceType, grant.sourceID, newBalance.String()); err != nil {
+			return nil, err
+		}
+	}
+	grantByID := make(map[int64]lockedBonusGrant, len(grants))
+	for _, grant := range grants {
+		grantByID[grant.id] = grant
+	}
+	for _, allocation := range plan.Allocations {
+		grant := grantByID[allocation.GrantID]
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE wallet_bonus_grants SET
+				remaining_amount = remaining_amount - $1,
+				status = CASE WHEN remaining_amount - $1 <= 0 THEN 'CONSUMED' ELSE status END,
+				updated_at = NOW()
+			WHERE id = $2 AND status = 'ACTIVE' AND remaining_amount >= $1`, allocation.Amount.String(), allocation.GrantID); err != nil {
+			return nil, err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO wallet_bonus_transactions
+				(user_id, grant_id, type, amount, request_id, source_type, source_id, balance_after)
+			VALUES ($1, $2, 'SPEND', $3, $4, $5, $6, $7)`, userID, allocation.GrantID,
+			allocation.Amount.String(), requestID, grant.sourceType, grant.sourceID, newBalance.String()); err != nil {
+			return nil, err
+		}
+	}
+	var persistedBalance float64
+	if err := tx.QueryRowContext(ctx, `
+		UPDATE users SET balance = $1, updated_at = NOW()
+		WHERE id = $2 AND deleted_at IS NULL
+		RETURNING balance`, newBalance.String(), userID).Scan(&persistedBalance); err != nil {
+		return nil, err
+	}
+	return &usageBillingBalanceDeduction{
+		NewBalance: persistedBalance, Sufficient: effectiveBalance.GreaterThanOrEqual(decimal.NewFromFloat(amount)),
+		BonusSpent: plan.Bonus.InexactFloat64(), PermanentSpent: plan.Permanent.InexactFloat64(),
+	}, nil
 }
 
 func incrementUsageBillingSubscription(ctx context.Context, tx *sql.Tx, subscriptionID int64, costUSD float64) error {
@@ -276,6 +437,9 @@ func reserveUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 	if cmd.HoldAmount <= 0 {
 		return &service.BatchImageBalanceHoldResult{}, nil
 	}
+	if strings.TrimSpace(cmd.BatchID) != "" {
+		return reserveBatchImageBalanceWithBonus(ctx, tx, cmd)
+	}
 	var balance, frozen float64
 	err := tx.QueryRowContext(ctx, `
 		UPDATE users
@@ -306,6 +470,9 @@ func captureUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 	if cmd.ActualAmount-cmd.HoldAmount > 0.00000001 {
 		return nil, service.ErrBatchImageSettlementCostExceedsHold
 	}
+	if strings.TrimSpace(cmd.BatchID) != "" {
+		return settleBatchImageBalanceWithBonus(ctx, tx, cmd, true)
+	}
 	var balance, frozen float64
 	err := tx.QueryRowContext(ctx, `
 		UPDATE users
@@ -334,6 +501,9 @@ func captureUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 func releaseUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {
 	if cmd.HoldAmount <= 0 {
 		return &service.BatchImageBalanceHoldResult{}, nil
+	}
+	if strings.TrimSpace(cmd.BatchID) != "" {
+		return settleBatchImageBalanceWithBonus(ctx, tx, cmd, false)
 	}
 	// 释放前校验该 job 确实预留过 hold（hold request id 已被 claim），
 	// 防止从未成功冻结的 job 触发"幻影释放"，从其他用户的冻结资金池中凭空生成余额。
@@ -366,6 +536,240 @@ func releaseUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 		return nil, service.ErrUserNotFound
 	}
 	return nil, errors.New("batch image frozen balance is insufficient")
+}
+
+type batchImageHoldAllocation struct {
+	id       int64
+	grantID  sql.NullInt64
+	amount   decimal.Decimal
+	captured decimal.Decimal
+	released decimal.Decimal
+	expires  sql.NullTime
+}
+
+func reserveBatchImageBalanceWithBonus(ctx context.Context, tx *sql.Tx, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {
+	hold := decimal.NewFromFloat(cmd.HoldAmount)
+	var rawBalance, rawFrozen string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT balance::text, COALESCE(frozen_balance, 0)::text
+		FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, cmd.UserID).Scan(&rawBalance, &rawFrozen); errors.Is(err, sql.ErrNoRows) {
+		return nil, service.ErrUserNotFound
+	} else if err != nil {
+		return nil, err
+	}
+	balance, err := decimal.NewFromString(rawBalance)
+	if err != nil {
+		return nil, err
+	}
+	frozen, err := decimal.NewFromString(rawFrozen)
+	if err != nil {
+		return nil, err
+	}
+
+	grants, expired, err := lockBatchImageBonusGrants(ctx, tx, cmd.UserID)
+	if err != nil {
+		return nil, err
+	}
+	effective := balance.Sub(expired)
+	if effective.LessThan(hold) {
+		return nil, service.ErrBatchImageInsufficientBalance
+	}
+	newBalance := effective.Sub(hold)
+	newFrozen := frozen.Add(hold)
+	if err := expireLockedBonusGrants(ctx, tx, cmd.UserID, grants.expired, newBalance); err != nil {
+		return nil, err
+	}
+
+	spendGrants := make([]service.BonusSpendGrant, 0, len(grants.active))
+	for _, grant := range grants.active {
+		spendGrants = append(spendGrants, service.BonusSpendGrant{GrantID: grant.id, Available: grant.remaining})
+	}
+	plan := service.BuildBonusSpendPlan(hold, spendGrants)
+	grantByID := make(map[int64]lockedBonusGrant, len(grants.active))
+	for _, grant := range grants.active {
+		grantByID[grant.id] = grant
+	}
+	for _, allocation := range plan.Allocations {
+		grant := grantByID[allocation.GrantID]
+		if _, err := tx.ExecContext(ctx, `UPDATE wallet_bonus_grants SET remaining_amount = remaining_amount - $1, updated_at = NOW() WHERE id = $2 AND status = 'ACTIVE' AND remaining_amount >= $1`, allocation.Amount.String(), allocation.GrantID); err != nil {
+			return nil, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO wallet_hold_allocations (hold_key, user_id, grant_id, source_key, amount) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (hold_key, source_key) DO NOTHING`, cmd.BatchID, cmd.UserID, allocation.GrantID, strconv.FormatInt(allocation.GrantID, 10), allocation.Amount.String()); err != nil {
+			return nil, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO wallet_bonus_transactions (user_id, grant_id, type, amount, request_id, source_type, source_id, balance_after) VALUES ($1, $2, 'HOLD', $3, $4, $5, $6, $7) ON CONFLICT (request_id, grant_id, type) DO NOTHING`, cmd.UserID, allocation.GrantID, allocation.Amount.String(), cmd.RequestID, grant.sourceType, grant.sourceID, newBalance.String()); err != nil {
+			return nil, err
+		}
+	}
+	if plan.Permanent.IsPositive() {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO wallet_hold_allocations (hold_key, user_id, grant_id, source_key, amount) VALUES ($1, $2, NULL, 'permanent', $3) ON CONFLICT (hold_key, source_key) DO NOTHING`, cmd.BatchID, cmd.UserID, plan.Permanent.String()); err != nil {
+			return nil, err
+		}
+	}
+	var persistedBalance, persistedFrozen float64
+	if err := tx.QueryRowContext(ctx, `UPDATE users SET balance = $1, frozen_balance = $2, updated_at = NOW() WHERE id = $3 RETURNING balance, frozen_balance`, newBalance.String(), newFrozen.String(), cmd.UserID).Scan(&persistedBalance, &persistedFrozen); err != nil {
+		return nil, err
+	}
+	return &service.BatchImageBalanceHoldResult{NewBalance: &persistedBalance, FrozenBalance: &persistedFrozen}, nil
+}
+
+type batchImageLockedGrants struct{ active, expired []lockedBonusGrant }
+
+func lockBatchImageBonusGrants(ctx context.Context, tx *sql.Tx, userID int64) (batchImageLockedGrants, decimal.Decimal, error) {
+	var result batchImageLockedGrants
+	expiredTotal := decimal.Zero
+	rows, err := tx.QueryContext(ctx, `SELECT id, remaining_amount::text, source_type, source_id, expires_at <= NOW() FROM wallet_bonus_grants WHERE user_id = $1 AND status = 'ACTIVE' AND remaining_amount > 0 ORDER BY expires_at, id FOR UPDATE`, userID)
+	if err != nil {
+		return result, expiredTotal, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var grant lockedBonusGrant
+		var raw string
+		var expired bool
+		if err := rows.Scan(&grant.id, &raw, &grant.sourceType, &grant.sourceID, &expired); err != nil {
+			return result, expiredTotal, err
+		}
+		grant.remaining, err = decimal.NewFromString(raw)
+		if err != nil {
+			return result, expiredTotal, err
+		}
+		if expired {
+			result.expired = append(result.expired, grant)
+			expiredTotal = expiredTotal.Add(grant.remaining)
+		} else {
+			result.active = append(result.active, grant)
+		}
+	}
+	return result, expiredTotal, rows.Err()
+}
+
+func expireLockedBonusGrants(ctx context.Context, tx *sql.Tx, userID int64, grants []lockedBonusGrant, balanceAfter decimal.Decimal) error {
+	for _, grant := range grants {
+		if _, err := tx.ExecContext(ctx, `UPDATE wallet_bonus_grants SET remaining_amount = 0, status = 'EXPIRED', expired_at = NOW(), updated_at = NOW() WHERE id = $1 AND status = 'ACTIVE'`, grant.id); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO wallet_bonus_transactions (user_id, grant_id, type, amount, request_id, source_type, source_id, balance_after) VALUES ($1, $2, 'EXPIRE', $3, $4, $5, $6, $7) ON CONFLICT (request_id, grant_id, type) DO NOTHING`, userID, grant.id, grant.remaining.String(), "expiry:inline:"+strconv.FormatInt(grant.id, 10), grant.sourceType, grant.sourceID, balanceAfter.String()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func settleBatchImageBalanceWithBonus(ctx context.Context, tx *sql.Tx, cmd *service.BatchImageBalanceHoldCommand, capture bool) (*service.BatchImageBalanceHoldResult, error) {
+	var rawBalance, rawFrozen string
+	if err := tx.QueryRowContext(ctx, `SELECT balance::text, COALESCE(frozen_balance, 0)::text FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, cmd.UserID).Scan(&rawBalance, &rawFrozen); errors.Is(err, sql.ErrNoRows) {
+		return nil, service.ErrUserNotFound
+	} else if err != nil {
+		return nil, err
+	}
+	balance, err := decimal.NewFromString(rawBalance)
+	if err != nil {
+		return nil, err
+	}
+	frozen, err := decimal.NewFromString(rawFrozen)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT a.id, a.grant_id, a.amount::text, a.captured_amount::text, a.released_amount::text, g.expires_at FROM wallet_hold_allocations a LEFT JOIN wallet_bonus_grants g ON g.id = a.grant_id WHERE a.hold_key = $1 AND a.user_id = $2 AND a.status = 'ACTIVE' ORDER BY a.id FOR UPDATE`, cmd.BatchID, cmd.UserID)
+	if err != nil {
+		return nil, err
+	}
+	var allocations []batchImageHoldAllocation
+	total := decimal.Zero
+	for rows.Next() {
+		var a batchImageHoldAllocation
+		var amount, capturedAmount, releasedAmount string
+		if err := rows.Scan(&a.id, &a.grantID, &amount, &capturedAmount, &releasedAmount, &a.expires); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		a.amount, err = decimal.NewFromString(amount)
+		if err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		a.captured, err = decimal.NewFromString(capturedAmount)
+		if err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		a.released, err = decimal.NewFromString(releasedAmount)
+		if err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		total = total.Add(a.amount.Sub(a.captured).Sub(a.released))
+		allocations = append(allocations, a)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+	if len(allocations) == 0 {
+		return &service.BatchImageBalanceHoldResult{}, nil
+	}
+	actual := decimal.Zero
+	if capture {
+		actual = decimal.NewFromFloat(cmd.ActualAmount)
+	}
+	if actual.GreaterThan(total) {
+		return nil, service.ErrBatchImageSettlementCostExceedsHold
+	}
+	restore := decimal.Zero
+	remainingCapture := actual
+	now := time.Now()
+	for _, a := range allocations {
+		available := a.amount.Sub(a.captured).Sub(a.released)
+		captured := decimal.Min(available, remainingCapture)
+		released := available.Sub(captured)
+		remainingCapture = remainingCapture.Sub(captured)
+		restored := released
+		if a.grantID.Valid {
+			if captured.IsPositive() {
+				if _, err := tx.ExecContext(ctx, `INSERT INTO wallet_bonus_transactions (user_id, grant_id, type, amount, request_id, source_type, source_id, balance_after) SELECT $1, id, 'CAPTURE', $2, $3, source_type, source_id, $4 FROM wallet_bonus_grants WHERE id = $5 ON CONFLICT (request_id, grant_id, type) DO NOTHING`, cmd.UserID, captured.String(), cmd.RequestID, balance.String(), a.grantID.Int64); err != nil {
+					return nil, err
+				}
+			}
+			if released.IsPositive() && a.expires.Valid && a.expires.Time.After(now) {
+				if _, err := tx.ExecContext(ctx, `UPDATE wallet_bonus_grants SET remaining_amount = remaining_amount + $1, status = 'ACTIVE', updated_at = NOW() WHERE id = $2`, released.String(), a.grantID.Int64); err != nil {
+					return nil, err
+				}
+				if _, err := tx.ExecContext(ctx, `INSERT INTO wallet_bonus_transactions (user_id, grant_id, type, amount, request_id, source_type, source_id, balance_after) SELECT $1, id, 'RELEASE', $2, $3, source_type, source_id, $4 FROM wallet_bonus_grants WHERE id = $5 ON CONFLICT (request_id, grant_id, type) DO NOTHING`, cmd.UserID, released.String(), cmd.RequestID, balance.String(), a.grantID.Int64); err != nil {
+					return nil, err
+				}
+			} else if released.IsPositive() {
+				restored = decimal.Zero
+				if _, err := tx.ExecContext(ctx, `UPDATE wallet_bonus_grants SET status = CASE WHEN remaining_amount = 0 THEN 'EXPIRED' ELSE status END, expired_at = COALESCE(expired_at, NOW()), updated_at = NOW() WHERE id = $1`, a.grantID.Int64); err != nil {
+					return nil, err
+				}
+				if _, err := tx.ExecContext(ctx, `INSERT INTO wallet_bonus_transactions (user_id, grant_id, type, amount, request_id, source_type, source_id, balance_after) SELECT $1, id, 'EXPIRE', $2, $3, source_type, source_id, $4 FROM wallet_bonus_grants WHERE id = $5 ON CONFLICT (request_id, grant_id, type) DO NOTHING`, cmd.UserID, released.String(), cmd.RequestID, balance.String(), a.grantID.Int64); err != nil {
+					return nil, err
+				}
+			}
+		}
+		restore = restore.Add(restored)
+		status := "RELEASED"
+		if captured.IsPositive() {
+			status = "CAPTURED"
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE wallet_hold_allocations SET captured_amount = captured_amount + $1, released_amount = released_amount + $2, status = $3, updated_at = NOW() WHERE id = $4`, captured.String(), released.String(), status, a.id); err != nil {
+			return nil, err
+		}
+		if a.grantID.Valid && captured.IsPositive() {
+			if _, err := tx.ExecContext(ctx, `UPDATE wallet_bonus_grants g SET status = 'CONSUMED', updated_at = NOW() WHERE g.id = $1 AND g.status = 'ACTIVE' AND g.remaining_amount = 0 AND NOT EXISTS (SELECT 1 FROM wallet_hold_allocations a WHERE a.grant_id = g.id AND a.status = 'ACTIVE')`, a.grantID.Int64); err != nil {
+				return nil, err
+			}
+		}
+	}
+	newBalance := balance.Add(restore)
+	newFrozen := frozen.Sub(total)
+	var persistedBalance, persistedFrozen float64
+	if err := tx.QueryRowContext(ctx, `UPDATE users SET balance = $1, frozen_balance = $2, updated_at = NOW() WHERE id = $3 AND COALESCE(frozen_balance, 0) >= $4 RETURNING balance, frozen_balance`, newBalance.String(), newFrozen.String(), cmd.UserID, total.String()).Scan(&persistedBalance, &persistedFrozen); err != nil {
+		return nil, err
+	}
+	return &service.BatchImageBalanceHoldResult{NewBalance: &persistedBalance, FrozenBalance: &persistedFrozen}, nil
 }
 
 // batchImageHoldClaimExists 检查 hold request id 是否已在 dedup（或归档）表中被 claim，

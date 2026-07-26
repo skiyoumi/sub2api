@@ -10,9 +10,11 @@
             <Icon name="creditCard" size="xl" class="text-white" />
           </div>
           <p class="text-sm font-medium text-primary-100">{{ t('redeem.currentBalance') }}</p>
-          <p class="mt-2 text-4xl font-bold text-white">
-            ${{ user?.balance?.toFixed(2) || '0.00' }}
+          <p class="mt-2 text-4xl font-bold text-white">${{ permanentBalance.toFixed(2) }}</p>
+          <p v-if="bonusBalance > 0" class="mt-1 text-xs text-red-200">
+            {{ t('payment.rechargePackages.currentBonus', { amount: bonusBalance.toFixed(2) }) }}
           </p>
+          <p v-if="bonusExpiryText" class="text-[11px] text-red-200">{{ bonusExpiryText }}</p>
           <p class="mt-2 text-sm text-primary-100">
             {{ t('redeem.concurrency') }}: {{ user?.concurrency || 0 }} {{ t('redeem.requests') }}
           </p>
@@ -347,17 +349,28 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { useSubscriptionStore } from '@/stores/subscriptions'
+import { usePaymentStore } from '@/stores/payment'
 import { redeemAPI, authAPI, type RedeemHistoryItem } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { formatDateTime } from '@/utils/format'
+import { formatDateTime, formatDateTimeToMinute } from '@/utils/format'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
 const appStore = useAppStore()
 const subscriptionStore = useSubscriptionStore()
+const paymentStore = usePaymentStore()
 
 const user = computed(() => authStore.user)
+const bonusBalance = computed(() => paymentStore.bonusBalance)
+const permanentBalance = computed(() => paymentStore.bonusSummaryLoaded ? paymentStore.permanentBalance : Number(user.value?.balance || 0))
+const bonusExpiryText = computed(() => {
+  if (bonusBalance.value <= 0 || !paymentStore.nearestBonusExpiry || paymentStore.nearestBonusExpiryAmount <= 0) return ''
+  return t('payment.rechargePackages.bonusExpiry', {
+    amount: paymentStore.nearestBonusExpiryAmount.toFixed(2),
+    date: formatDateTimeToMinute(paymentStore.nearestBonusExpiry),
+  })
+})
 
 const redeemCode = ref('')
 const submitting = ref(false)

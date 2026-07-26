@@ -83,33 +83,40 @@ type CreateOrderRequest struct {
 	ReturnURL       string
 	PaymentSource   string
 	OrderType       string
-	PlanID          int64
-	Locale          string
+	PlanID              int64
+	RechargePackageID   string
+	RechargePackageHash string
+	Locale              string
+	rechargePackage *RechargePackageSelection
 }
 
 type CreateOrderResponse struct {
-	OrderID                       int64                           `json:"order_id"`
-	Amount                        float64                         `json:"amount"`
-	PayAmount                     float64                         `json:"pay_amount"`
-	FeeRate                       float64                         `json:"fee_rate"`
-	Status                        string                          `json:"status"`
-	ResultType                    payment.CreatePaymentResultType `json:"result_type,omitempty"`
-	PaymentType                   string                          `json:"payment_type"`
-	OutTradeNo                    string                          `json:"out_trade_no,omitempty"`
-	PayURL                        string                          `json:"pay_url,omitempty"`
-	QRCode                        string                          `json:"qr_code,omitempty"`
-	ClientSecret                  string                          `json:"client_secret,omitempty"`
-	IntentID                      string                          `json:"intent_id,omitempty"`
-	Currency                      string                          `json:"currency,omitempty"`
-	CountryCode                   string                          `json:"country_code,omitempty"`
-	PaymentEnv                    string                          `json:"payment_env,omitempty"`
-	OAuth                         *payment.WechatOAuthInfo        `json:"oauth,omitempty"`
-	JSAPI                         *payment.WechatJSAPIPayload     `json:"jsapi,omitempty"`
-	JSAPIPayload                  *payment.WechatJSAPIPayload     `json:"jsapi_payload,omitempty"`
-	ExpiresAt                     time.Time                       `json:"expires_at"`
-	PaymentMode                   string                          `json:"payment_mode,omitempty"`
-	ResumeToken                   string                          `json:"resume_token,omitempty"`
-	AlipayMobilePrecreateDeepLink bool                            `json:"alipay_mobile_precreate_deep_link,omitempty"`
+	OrderID      int64                           `json:"order_id"`
+	Amount       float64                         `json:"amount"`
+	PayAmount    float64                         `json:"pay_amount"`
+	FeeRate      float64                         `json:"fee_rate"`
+	Status       string                          `json:"status"`
+	ResultType   payment.CreatePaymentResultType `json:"result_type,omitempty"`
+	PaymentType  string                          `json:"payment_type"`
+	OutTradeNo   string                          `json:"out_trade_no,omitempty"`
+	PayURL       string                          `json:"pay_url,omitempty"`
+	QRCode       string                          `json:"qr_code,omitempty"`
+	ClientSecret string                          `json:"client_secret,omitempty"`
+	IntentID     string                          `json:"intent_id,omitempty"`
+	Currency     string                          `json:"currency,omitempty"`
+	CountryCode  string                          `json:"country_code,omitempty"`
+	PaymentEnv   string                          `json:"payment_env,omitempty"`
+	OAuth        *payment.WechatOAuthInfo        `json:"oauth,omitempty"`
+	JSAPI        *payment.WechatJSAPIPayload     `json:"jsapi,omitempty"`
+	JSAPIPayload *payment.WechatJSAPIPayload     `json:"jsapi_payload,omitempty"`
+	ExpiresAt    time.Time                       `json:"expires_at"`
+	PaymentMode  string                          `json:"payment_mode,omitempty"`
+	ResumeToken  string                          `json:"resume_token,omitempty"`
+	AlipayMobilePrecreateDeepLink bool           `json:"alipay_mobile_precreate_deep_link,omitempty"`
+	BaseAmount            float64 `json:"base_amount,omitempty"`
+	PermanentCreditAmount float64 `json:"permanent_credit_amount,omitempty"`
+	BonusAmount           float64 `json:"bonus_amount,omitempty"`
+	RechargePackageID     string  `json:"recharge_package_id,omitempty"`
 }
 
 type OrderListParams struct {
@@ -190,12 +197,20 @@ type PaymentService struct {
 	resumeService            *PaymentResumeService
 	affiliateService         *AffiliateService
 	notificationEmailService *NotificationEmailService
+	bonusWallet              *BonusWallet
 }
 
 func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService) *PaymentService {
 	svc := &PaymentService{entClient: entClient, registry: registry, loadBalancer: newVisibleMethodLoadBalancer(loadBalancer, configService), redeemService: redeemService, subscriptionSvc: subscriptionSvc, configService: configService, userRepo: userRepo, groupRepo: groupRepo, affiliateService: affiliateService}
+	if entClient != nil {
+		svc.bonusWallet = NewBonusWallet(entClient)
+	}
 	svc.resumeService = psNewPaymentResumeService(configService)
 	return svc
+}
+
+func (s *PaymentService) SetBonusWallet(wallet *BonusWallet) {
+	s.bonusWallet = wallet
 }
 
 func (s *PaymentService) SetNotificationEmailService(notificationEmailService *NotificationEmailService) {

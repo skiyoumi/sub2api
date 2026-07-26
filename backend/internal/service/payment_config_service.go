@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -40,6 +41,9 @@ const (
 	SettingCancelWindowMode              = "CANCEL_RATE_LIMIT_WINDOW_MODE"
 	SettingAlipayForceQRCode             = "ALIPAY_FORCE_QRCODE"
 	SettingAlipayMobilePrecreateDeepLink = "ALIPAY_MOBILE_PRECREATE_DEEP_LINK"
+	SettingRechargePackagesEnabled = "RECHARGE_PACKAGES_ENABLED"
+    SettingAllowCustomRecharge     = "ALLOW_CUSTOM_RECHARGE_AMOUNT"
+    SettingRechargePackages        = "RECHARGE_PACKAGES"
 )
 
 // Default values for payment configuration settings.
@@ -80,6 +84,9 @@ type PaymentConfig struct {
 	AlipayForceQRCode bool `json:"alipay_force_qrcode"`
 	// Use Alipay face-to-face precreate and an app deep link on mobile clients.
 	AlipayMobilePrecreateDeepLink bool `json:"alipay_mobile_precreate_deep_link"`
+	RechargePackagesEnabled bool              `json:"recharge_packages_enabled"`
+    AllowCustomRecharge     bool              `json:"allow_custom_amount"`
+    RechargePackages        []RechargePackage `json:"recharge_packages"`
 }
 
 // UpdatePaymentConfigRequest contains fields to update payment configuration.
@@ -112,6 +119,10 @@ type UpdatePaymentConfigRequest struct {
 	AlipayForceQRCode *bool `json:"alipay_force_qrcode"`
 	// Use Alipay face-to-face precreate and an app deep link on mobile clients.
 	AlipayMobilePrecreateDeepLink *bool `json:"alipay_mobile_precreate_deep_link"`
+	AlipayForceQRCode       *bool              `json:"alipay_force_qrcode"`
+	RechargePackagesEnabled *bool              `json:"recharge_packages_enabled"`
+	AllowCustomRecharge     *bool              `json:"allow_custom_amount"`
+	RechargePackages        *[]RechargePackage `json:"recharge_packages"`
 
 	VisibleMethodAlipaySource  *string `json:"payment_visible_method_alipay_source"`
 	VisibleMethodWxpaySource   *string `json:"payment_visible_method_wxpay_source"`
@@ -225,6 +236,7 @@ func (s *PaymentConfigService) GetPaymentConfig(ctx context.Context) (*PaymentCo
 		SettingCancelRateLimitOn, SettingCancelRateLimitMax,
 		SettingCancelWindowSize, SettingCancelWindowUnit, SettingCancelWindowMode,
 		SettingAlipayForceQRCode, SettingAlipayMobilePrecreateDeepLink,
+		SettingRechargePackagesEnabled, SettingAllowCustomRecharge, SettingRechargePackages,
 		SettingPaymentVisibleMethodAlipayEnabled, SettingPaymentVisibleMethodAlipaySource,
 		SettingPaymentVisibleMethodWxpayEnabled, SettingPaymentVisibleMethodWxpaySource,
 	}
@@ -233,6 +245,11 @@ func (s *PaymentConfigService) GetPaymentConfig(ctx context.Context) (*PaymentCo
 		return nil, fmt.Errorf("get payment config settings: %w", err)
 	}
 	cfg := s.parsePaymentConfig(vals)
+	packages, err := ParseRechargePackages(vals[SettingRechargePackages], cfg.RechargePackagesEnabled, cfg.MinAmount, cfg.MaxAmount)
+	if err != nil {
+		return nil, fmt.Errorf("invalid recharge package configuration: %w", err)
+	}
+	cfg.RechargePackages = packages
 	// Load Stripe publishable key from the first enabled Stripe provider instance
 	cfg.StripePublishableKey = s.getStripePublishableKey(ctx)
 	return cfg, nil
@@ -264,6 +281,8 @@ func (s *PaymentConfigService) parsePaymentConfig(vals map[string]string) *Payme
 
 		AlipayForceQRCode:             vals[SettingAlipayForceQRCode] == "true",
 		AlipayMobilePrecreateDeepLink: vals[SettingAlipayMobilePrecreateDeepLink] == "true",
+		RechargePackagesEnabled: vals[SettingRechargePackagesEnabled] == "true",
+        AllowCustomRecharge:     vals[SettingAllowCustomRecharge] == "" || vals[SettingAllowCustomRecharge] == "true",
 	}
 	cfg.AlipayMobilePrecreateDeepLink = pcEnvBoolOverride(
 		SettingAlipayMobilePrecreateDeepLink,
@@ -322,6 +341,42 @@ func (s *PaymentConfigService) getStripePublishableKey(ctx context.Context) stri
 // nil-check before serialisation — this is inherent to patch-style update patterns
 // and cannot be meaningfully decomposed without introducing unnecessary abstraction.
 func (s *PaymentConfigService) UpdatePaymentConfig(ctx context.Context, req UpdatePaymentConfigRequest) error {
+	if req.RechargePackages != nil || req.RechargePackagesEnabled != nil {
+		current, err := s.settingRepo.GetMultiple(ctx, []string{
+			SettingRechargePackagesEnabled, SettingRechargePackages,
+			SettingMinRechargeAmount, SettingMaxRechargeAmount,
+		})
+		if err != nil {
+			return fmt.Errorf("get recharge package settings: %w", err)
+		}
+		enabled := current[SettingRechargePackagesEnabled] == "true"
+		if req.RechargePackagesEnabled != nil {
+			enabled = *req.RechargePackagesEnabled
+		}
+		minAmount := pcParseFloat(current[SettingMinRechargeAmount], 1)
+		maxAmount := pcParseFloat(current[SettingMaxRechargeAmount], 0)
+		if req.MinAmount != nil {
+			minAmount = *req.MinAmount
+		}
+		if req.MaxAmount != nil {
+			maxAmount = *req.MaxAmount
+		}
+		raw := current[SettingRechargePackages]
+		if req.RechargePackages != nil {
+			encoded, err := json.Marshal(*req.RechargePackages)
+			if err != nil {
+				return infraerrors.BadRequest("INVALID_RECHARGE_PACKAGES", "recharge packages cannot be encoded")
+			}
+			raw = string(encoded)
+		}
+		packages, err := ParseRechargePackages(raw, enabled, minAmount, maxAmount)
+		if err != nil {
+			return infraerrors.BadRequest("INVALID_RECHARGE_PACKAGES", err.Error())
+		}
+		if req.RechargePackages != nil {
+			req.RechargePackages = &packages
+		}
+	}
 	if req.BalanceRechargeMultiplier != nil {
 		if math.IsNaN(*req.BalanceRechargeMultiplier) || math.IsInf(*req.BalanceRechargeMultiplier, 0) || *req.BalanceRechargeMultiplier <= 0 {
 			return infraerrors.BadRequest("INVALID_BALANCE_RECHARGE_MULTIPLIER", "balance recharge multiplier must be greater than 0")
@@ -365,11 +420,17 @@ func (s *PaymentConfigService) UpdatePaymentConfig(ctx context.Context, req Upda
 		SettingCancelWindowUnit:                  derefStr(req.CancelRateLimitUnit),
 		SettingCancelWindowMode:                  derefStr(req.CancelRateLimitMode),
 		SettingAlipayForceQRCode:                 formatBoolOrEmpty(req.AlipayForceQRCode),
+		SettingRechargePackagesEnabled:           formatBoolOrEmpty(req.RechargePackagesEnabled),
+		SettingAllowCustomRecharge:               formatBoolOrEmpty(req.AllowCustomRecharge),
 		SettingAlipayMobilePrecreateDeepLink:     formatBoolOrEmpty(req.AlipayMobilePrecreateDeepLink),
 		SettingPaymentVisibleMethodAlipaySource:  derefStr(req.VisibleMethodAlipaySource),
 		SettingPaymentVisibleMethodWxpaySource:   derefStr(req.VisibleMethodWxpaySource),
 		SettingPaymentVisibleMethodAlipayEnabled: formatBoolOrEmpty(req.VisibleMethodAlipayEnabled),
 		SettingPaymentVisibleMethodWxpayEnabled:  formatBoolOrEmpty(req.VisibleMethodWxpayEnabled),
+	}
+	if req.RechargePackages != nil {
+		raw, _ := json.Marshal(*req.RechargePackages)
+		m[SettingRechargePackages] = string(raw)
 	}
 	if req.EnabledTypes != nil {
 		m[SettingEnabledPaymentTypes] = strings.Join(req.EnabledTypes, ",")

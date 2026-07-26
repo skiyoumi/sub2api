@@ -78,6 +78,21 @@ export interface CheckoutInfoResponse {
   alipay_force_qrcode?: boolean
   /** When true, official Alipay mobile orders use precreate plus an Alipay app deep link */
   alipay_mobile_precreate_deep_link?: boolean
+  recharge_packages_enabled?: boolean
+  allow_custom_amount?: boolean
+  recharge_packages?: RechargePackage[]
+  bonus_balance?: number
+  nearest_bonus_expiry?: string | null
+  nearest_bonus_expiry_amount?: number
+}
+
+export interface RechargePackage {
+  id: string
+  amount: number
+  bonus_amount: number
+  bonus_validity_days: number
+  recommended: boolean
+  sort_order: number
 }
 
 // ==================== Orders ====================
@@ -104,6 +119,11 @@ export interface PaymentOrder {
   refund_request_reason?: string
   plan_id?: number
   provider_instance_id?: string
+  base_amount?: number
+  permanent_credit_amount?: number
+  bonus_amount?: number
+  bonus_expires_at?: string
+  recharge_package_id?: string
 }
 
 // ==================== Plans & Channels ====================
@@ -176,6 +196,7 @@ export interface CreateOrderRequest {
   openid?: string
   wechat_resume_token?: string
   is_mobile?: boolean
+  recharge_package_id?: string
 }
 
 export type CreateOrderResultType = 'order_created' | 'oauth_required' | 'jsapi_ready'
@@ -216,6 +237,10 @@ export interface CreateOrderResult {
   out_trade_no?: string
   payment_mode?: string
   resume_token?: string
+  base_amount?: number
+  permanent_credit_amount?: number
+  bonus_amount?: number
+  recharge_package_id?: string
   alipay_mobile_precreate_deep_link?: boolean
   oauth?: WechatOAuthInfo
   jsapi?: WechatJSAPIPayload

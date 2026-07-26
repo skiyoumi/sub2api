@@ -31,8 +31,12 @@
           <div class="flex-shrink-0 text-right">
             <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.users.currentBalance') }}</p>
             <p class="text-xl font-bold text-gray-900 dark:text-white">
-              ${{ user.balance?.toFixed(2) || '0.00' }}
+              ${{ permanentBalance.toFixed(2) }}
             </p>
+            <p v-if="bonusBalance > 0" class="text-xs text-red-600 dark:text-red-400">
+              {{ t('payment.rechargePackages.currentBonus', { amount: bonusBalance.toFixed(2) }) }}
+            </p>
+            <p v-if="bonusExpiryText" class="text-[10px] text-red-500 dark:text-red-400">{{ bonusExpiryText }}</p>
           </div>
         </div>
         <!-- Row 2: notes + total recharged -->
@@ -175,7 +179,7 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI, type BalanceHistoryItem } from '@/api/admin'
-import { formatDateTime } from '@/utils/format'
+import { formatDateTime, formatDateTimeToMinute } from '@/utils/format'
 import type { AdminUser } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
@@ -190,15 +194,27 @@ const loading = ref(false)
 const currentPage = ref(1)
 const total = ref(0)
 const totalRecharged = ref(0)
+const bonusBalance = ref(0)
+const nearestBonusExpiry = ref<string | null>(null)
+const nearestBonusExpiryAmount = ref(0)
 const pageSize = 15
 const typeFilter = ref('')
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize) || 1)
+const permanentBalance = computed(() => Math.max(0, Number(props.user?.balance || 0) - bonusBalance.value))
+const bonusExpiryText = computed(() => {
+  if (bonusBalance.value <= 0 || !nearestBonusExpiry.value || nearestBonusExpiryAmount.value <= 0) return ''
+  return t('payment.rechargePackages.bonusExpiry', {
+    amount: nearestBonusExpiryAmount.value.toFixed(2),
+    date: formatDateTimeToMinute(nearestBonusExpiry.value),
+  })
+})
 
 // Type filter options
 const typeOptions = computed(() => [
   { value: '', label: t('admin.users.allTypes') },
   { value: 'balance', label: t('admin.users.typeBalance') },
+  { value: 'package_balance', label: t('admin.users.typePackageBalance') },
   { value: 'affiliate_balance', label: t('admin.users.typeAffiliateBalance') },
   { value: 'admin_balance', label: t('admin.users.typeAdminBalance') },
   { value: 'concurrency', label: t('admin.users.typeConcurrency') },
@@ -228,6 +244,9 @@ const loadHistory = async (page: number) => {
     history.value = res.items || []
     total.value = res.total || 0
     totalRecharged.value = res.total_recharged || 0
+    bonusBalance.value = Math.max(0, res.bonus_balance || 0)
+    nearestBonusExpiry.value = res.nearest_bonus_expiry || null
+    nearestBonusExpiryAmount.value = Math.max(0, res.nearest_bonus_expiry_amount || 0)
   } catch (error) {
     console.error('Failed to load balance history:', error)
   } finally {
@@ -239,7 +258,7 @@ const loadHistory = async (page: number) => {
 const isAdminType = (type: string) => type === 'admin_balance' || type === 'admin_concurrency'
 
 // Helper: check if balance type (includes admin_balance)
-const isBalanceType = (type: string) => type === 'balance' || type === 'admin_balance' || type === 'affiliate_balance'
+const isBalanceType = (type: string) => type === 'balance' || type === 'package_balance' || type === 'admin_balance' || type === 'affiliate_balance'
 
 // Helper: check if subscription type
 const isSubscriptionType = (type: string) => type === 'subscription'
@@ -295,6 +314,8 @@ const getItemTitle = (item: BalanceHistoryItem) => {
   switch (item.type) {
     case 'balance':
       return t('redeem.balanceAddedRedeem')
+    case 'package_balance':
+      return t('dashboard.balanceAddedPackage')
     case 'affiliate_balance':
       return t('redeem.balanceAddedAffiliate')
     case 'admin_balance':

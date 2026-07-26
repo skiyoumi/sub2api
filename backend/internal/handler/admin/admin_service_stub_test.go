@@ -187,7 +187,7 @@ func (s *stubAdminService) DeleteUser(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (s *stubAdminService) UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string) (*service.User, error) {
+func (s *stubAdminService) UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string, bonus ...service.AdminBalanceBonus) (*service.User, error) {
 	user := service.User{ID: userID, Balance: balance, Status: service.StatusActive}
 	return &user, nil
 }
@@ -714,6 +714,10 @@ func (s *stubAdminService) ExpireRedeemCode(ctx context.Context, id int64) (*ser
 
 func (s *stubAdminService) GetUserBalanceHistory(ctx context.Context, userID int64, page, pageSize int, codeType string) ([]service.RedeemCode, int64, float64, error) {
 	return s.redeems, int64(len(s.redeems)), 100.0, nil
+}
+
+func (s *stubAdminService) GetUserBonusWalletSummary(ctx context.Context, userID int64) (*service.BonusWalletSummary, error) {
+	return &service.BonusWalletSummary{}, nil
 }
 
 func (s *stubAdminService) UpdateGroupSortOrders(ctx context.Context, updates []service.GroupSortOrderUpdate) error {

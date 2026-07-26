@@ -6975,6 +6975,31 @@
                   </div>
                 </div>
                 <!-- Row 3: Pending orders + load balance + cancel rate limit (all in one row) -->
+                <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-700">
+                  <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.settings.payment.rechargePackagesTitle') }}</h4>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.settings.payment.rechargePackagesHint') }}</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-4 text-xs">
+                      <label class="flex items-center gap-2"><input v-model="form.payment_recharge_packages_enabled" type="checkbox" class="checkbox" />{{ t('admin.settings.payment.rechargePackagesEnabled') }}</label>
+                      <label class="flex items-center gap-2"><input v-model="form.payment_allow_custom_recharge_amount" type="checkbox" class="checkbox" />{{ t('admin.settings.payment.allowCustomRecharge') }}</label>
+                      <button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" @click="addRechargePackage">{{ t('admin.settings.payment.addRechargePackage') }}</button>
+                    </div>
+                  </div>
+                  <div v-if="form.payment_recharge_packages.length" class="space-y-2">
+                    <div v-for="(pkg, index) in form.payment_recharge_packages" :key="pkg.id" class="grid grid-cols-2 gap-2 rounded-md border border-gray-100 p-3 dark:border-dark-700 sm:grid-cols-7">
+                      <input v-model="pkg.amount" type="number" min="0.01" step="0.01" class="input" :placeholder="t('admin.settings.payment.packageAmount')" />
+                      <input v-model="pkg.bonus_amount" type="number" min="0" step="0.00000001" class="input" :placeholder="t('admin.settings.payment.packageBonus')" />
+                      <input v-model.number="pkg.bonus_validity_days" type="number" min="0" max="3650" class="input" :placeholder="t('admin.settings.payment.packageDays')" />
+                      <label class="flex items-center gap-2 text-xs"><input v-model="pkg.recommended" type="checkbox" class="checkbox" />{{ t('admin.settings.payment.packageRecommended') }}</label>
+                      <label class="flex items-center gap-2 text-xs"><input v-model="pkg.enabled" type="checkbox" class="checkbox" />{{ t('admin.settings.payment.packageEnabled') }}</label>
+                      <div class="flex items-center gap-1"><button type="button" class="btn btn-secondary px-2 py-1" :disabled="index === 0" title="Move up" @click="moveRechargePackage(index, -1)">↑</button><button type="button" class="btn btn-secondary px-2 py-1" :disabled="index === form.payment_recharge_packages.length - 1" title="Move down" @click="moveRechargePackage(index, 1)">↓</button></div>
+                      <button type="button" class="btn btn-danger px-2 py-1 text-xs" @click="removeRechargePackage(index)">{{ t('common.delete') }}</button>
+                    </div>
+                  </div>
+                  <p v-else class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.settings.payment.noRechargePackages') }}</p>
+                </div>
                 <div class="flex flex-wrap items-end gap-4">
                   <div class="w-28">
                     <label class="input-label">{{
@@ -7775,6 +7800,7 @@ import type {
   WebSearchEmulationConfig,
   WebSearchProviderConfig,
   WebSearchTestResult,
+  AdminRechargePackage,
 } from "@/api/admin/settings";
 import type {
   AdminGroup,
@@ -8537,6 +8563,9 @@ const form = reactive<SettingsForm>({
   payment_balance_recharge_multiplier: 1,
   payment_subscription_usd_to_cny_rate: 0,
   payment_recharge_fee_rate: 0,
+  payment_recharge_packages_enabled: false,
+  payment_allow_custom_recharge_amount: true,
+  payment_recharge_packages: [],
   payment_enabled_types: [],
   payment_help_image_url: "",
   payment_help_text: "",
@@ -8733,6 +8762,42 @@ const form = reactive<SettingsForm>({
   // Allow user view error requests
   allow_user_view_error_requests: false,
 });
+
+function normalizeRechargePackageOrder() {
+  form.payment_recharge_packages.forEach((pkg, index) => {
+    pkg.sort_order = (index + 1) * 10;
+  });
+}
+
+function addRechargePackage() {
+  const id = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? `pkg_${crypto.randomUUID().replace(/-/g, "")}`
+    : `pkg_${Date.now()}`;
+  const pkg: AdminRechargePackage = {
+    id,
+    amount: "10.00",
+    bonus_amount: "0",
+    bonus_validity_days: 0,
+    recommended: false,
+    enabled: true,
+    sort_order: 0,
+  };
+  form.payment_recharge_packages.push(pkg);
+  normalizeRechargePackageOrder();
+}
+
+function removeRechargePackage(index: number) {
+  form.payment_recharge_packages.splice(index, 1);
+  normalizeRechargePackageOrder();
+}
+
+function moveRechargePackage(index: number, direction: -1 | 1) {
+  const target = index + direction;
+  if (target < 0 || target >= form.payment_recharge_packages.length) return;
+  const [pkg] = form.payment_recharge_packages.splice(index, 1);
+  form.payment_recharge_packages.splice(target, 0, pkg);
+  normalizeRechargePackageOrder();
+}
 
 type OpenAIAdvancedSchedulerOverrideKey =
   | "openai_advanced_scheduler_lb_top_k"
@@ -10206,6 +10271,13 @@ async function saveSettings() {
       payment_subscription_usd_to_cny_rate:
         Number(form.payment_subscription_usd_to_cny_rate) || 0,
       payment_recharge_fee_rate: Number(form.payment_recharge_fee_rate) || 0,
+      payment_recharge_packages_enabled: Boolean(form.payment_recharge_packages_enabled),
+      payment_allow_custom_recharge_amount: form.payment_allow_custom_recharge_amount !== false,
+      payment_recharge_packages: (form.payment_recharge_packages || []).map((pkg) => ({
+        ...pkg,
+        amount: String(pkg.amount),
+        bonus_amount: String(pkg.bonus_amount),
+      })),
       payment_enabled_types: form.payment_enabled_types,
       payment_load_balance_strategy: form.payment_load_balance_strategy,
       payment_product_name_prefix: form.payment_product_name_prefix,

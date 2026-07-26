@@ -289,7 +289,10 @@ type UpdateSettingsRequest struct {
 	PaymentProductNamePrefix         *string  `json:"payment_product_name_prefix"`
 	PaymentProductNameSuffix         *string  `json:"payment_product_name_suffix"`
 	PaymentHelpImageURL              *string  `json:"payment_help_image_url"`
-	PaymentHelpText                  *string  `json:"payment_help_text"`
+	PaymentHelpText                   *string                    `json:"payment_help_text"`
+	PaymentRechargePackagesEnabled   *bool                      `json:"payment_recharge_packages_enabled"`
+	PaymentAllowCustomRechargeAmount *bool                      `json:"payment_allow_custom_recharge_amount"`
+	PaymentRechargePackages          *[]service.RechargePackage `json:"payment_recharge_packages"`
 
 	// Cancel rate limit
 	PaymentCancelRateLimitEnabled *bool   `json:"payment_cancel_rate_limit_enabled"`
@@ -1712,28 +1715,31 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	// Skip if no payment fields were provided (prevents accidental wipe).
 	if h.paymentConfigService != nil && hasPaymentFields(req) {
 		paymentReq := service.UpdatePaymentConfigRequest{
-			Enabled:                       req.PaymentEnabled,
-			MinAmount:                     req.PaymentMinAmount,
-			MaxAmount:                     req.PaymentMaxAmount,
-			DailyLimit:                    req.PaymentDailyLimit,
-			OrderTimeoutMin:               req.PaymentOrderTimeoutMin,
-			MaxPendingOrders:              req.PaymentMaxPendingOrders,
-			EnabledTypes:                  req.PaymentEnabledTypes,
-			BalanceDisabled:               req.PaymentBalanceDisabled,
-			BalanceRechargeMultiplier:     req.PaymentBalanceRechargeMultiplier,
-			SubscriptionUSDToCNYRate:      req.PaymentSubscriptionUSDToCNYRate,
-			RechargeFeeRate:               req.PaymentRechargeFeeRate,
-			LoadBalanceStrategy:           req.PaymentLoadBalanceStrat,
-			ProductNamePrefix:             req.PaymentProductNamePrefix,
-			ProductNameSuffix:             req.PaymentProductNameSuffix,
-			HelpImageURL:                  req.PaymentHelpImageURL,
-			HelpText:                      req.PaymentHelpText,
-			CancelRateLimitEnabled:        req.PaymentCancelRateLimitEnabled,
-			CancelRateLimitMax:            req.PaymentCancelRateLimitMax,
-			CancelRateLimitWindow:         req.PaymentCancelRateLimitWindow,
-			CancelRateLimitUnit:           req.PaymentCancelRateLimitUnit,
-			CancelRateLimitMode:           req.PaymentCancelRateLimitMode,
-			AlipayForceQRCode:             req.PaymentAlipayForceQRCode,
+			Enabled:                   req.PaymentEnabled,
+			MinAmount:                 req.PaymentMinAmount,
+			MaxAmount:                 req.PaymentMaxAmount,
+			DailyLimit:                req.PaymentDailyLimit,
+			OrderTimeoutMin:           req.PaymentOrderTimeoutMin,
+			MaxPendingOrders:          req.PaymentMaxPendingOrders,
+			EnabledTypes:              req.PaymentEnabledTypes,
+			BalanceDisabled:           req.PaymentBalanceDisabled,
+			BalanceRechargeMultiplier: req.PaymentBalanceRechargeMultiplier,
+			SubscriptionUSDToCNYRate:  req.PaymentSubscriptionUSDToCNYRate,
+			RechargeFeeRate:           req.PaymentRechargeFeeRate,
+			LoadBalanceStrategy:       req.PaymentLoadBalanceStrat,
+			ProductNamePrefix:         req.PaymentProductNamePrefix,
+			ProductNameSuffix:         req.PaymentProductNameSuffix,
+			HelpImageURL:              req.PaymentHelpImageURL,
+			HelpText:                  req.PaymentHelpText,
+			RechargePackagesEnabled:   req.PaymentRechargePackagesEnabled,
+			AllowCustomRecharge:       req.PaymentAllowCustomRechargeAmount,
+			RechargePackages:          req.PaymentRechargePackages,
+			CancelRateLimitEnabled:    req.PaymentCancelRateLimitEnabled,
+			CancelRateLimitMax:        req.PaymentCancelRateLimitMax,
+			CancelRateLimitWindow:     req.PaymentCancelRateLimitWindow,
+			CancelRateLimitUnit:       req.PaymentCancelRateLimitUnit,
+			CancelRateLimitMode:       req.PaymentCancelRateLimitMode,
+			AlipayForceQRCode:         req.PaymentAlipayForceQRCode,
 			AlipayMobilePrecreateDeepLink: req.PaymentAlipayMobilePrecreateDeepLink,
 		}
 		if err := h.paymentConfigService.UpdatePaymentConfig(c.Request.Context(), paymentReq); err != nil {
@@ -1982,6 +1988,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PaymentProductNameSuffix:                               updatedPaymentCfg.ProductNameSuffix,
 		PaymentHelpImageURL:                                    updatedPaymentCfg.HelpImageURL,
 		PaymentHelpText:                                        updatedPaymentCfg.HelpText,
+		PaymentRechargePackagesEnabled:                         updatedPaymentCfg.RechargePackagesEnabled,
+		PaymentAllowCustomRechargeAmount:                       updatedPaymentCfg.AllowCustomRecharge,
+		PaymentRechargePackages:                                updatedPaymentCfg.RechargePackages,
 		PaymentCancelRateLimitEnabled:                          updatedPaymentCfg.CancelRateLimitEnabled,
 		PaymentCancelRateLimitMax:                              updatedPaymentCfg.CancelRateLimitMax,
 		PaymentCancelRateLimitWindow:                           updatedPaymentCfg.CancelRateLimitWindow,
@@ -2039,7 +2048,9 @@ func hasPaymentFields(req UpdateSettingsRequest) bool {
 		req.PaymentRechargeFeeRate != nil ||
 		req.PaymentLoadBalanceStrat != nil || req.PaymentProductNamePrefix != nil ||
 		req.PaymentProductNameSuffix != nil || req.PaymentHelpImageURL != nil ||
-		req.PaymentHelpText != nil || req.PaymentCancelRateLimitEnabled != nil ||
+		req.PaymentHelpText != nil || req.PaymentRechargePackagesEnabled != nil ||
+		req.PaymentAllowCustomRechargeAmount != nil || req.PaymentRechargePackages != nil ||
+		req.PaymentCancelRateLimitEnabled != nil ||
 		req.PaymentCancelRateLimitMax != nil || req.PaymentCancelRateLimitWindow != nil ||
 		req.PaymentCancelRateLimitUnit != nil || req.PaymentCancelRateLimitMode != nil ||
 		req.PaymentAlipayForceQRCode != nil || req.PaymentAlipayMobilePrecreateDeepLink != nil

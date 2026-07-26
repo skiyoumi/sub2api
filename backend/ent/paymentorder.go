@@ -35,6 +35,20 @@ type PaymentOrder struct {
 	FeeRate float64 `json:"fee_rate,omitempty"`
 	// RechargeCode holds the value of the "recharge_code" field.
 	RechargeCode string `json:"recharge_code,omitempty"`
+	// RechargePackageID holds the value of the "recharge_package_id" field.
+	RechargePackageID *string `json:"recharge_package_id,omitempty"`
+	// BaseAmount holds the value of the "base_amount" field.
+	BaseAmount *float64 `json:"base_amount,omitempty"`
+	// PermanentCreditAmount holds the value of the "permanent_credit_amount" field.
+	PermanentCreditAmount *float64 `json:"permanent_credit_amount,omitempty"`
+	// BonusAmount holds the value of the "bonus_amount" field.
+	BonusAmount float64 `json:"bonus_amount,omitempty"`
+	// BonusValidityDays holds the value of the "bonus_validity_days" field.
+	BonusValidityDays int `json:"bonus_validity_days,omitempty"`
+	// BonusExpiresAt holds the value of the "bonus_expires_at" field.
+	BonusExpiresAt *time.Time `json:"bonus_expires_at,omitempty"`
+	// RechargePackageSnapshot holds the value of the "recharge_package_snapshot" field.
+	RechargePackageSnapshot map[string]interface{} `json:"recharge_package_snapshot,omitempty"`
 	// OutTradeNo holds the value of the "out_trade_no" field.
 	OutTradeNo string `json:"out_trade_no,omitempty"`
 	// PaymentType holds the value of the "payment_type" field.
@@ -128,17 +142,17 @@ func (*PaymentOrder) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case paymentorder.FieldProviderSnapshot:
+		case paymentorder.FieldRechargePackageSnapshot, paymentorder.FieldProviderSnapshot:
 			values[i] = new([]byte)
 		case paymentorder.FieldForceRefund:
 			values[i] = new(sql.NullBool)
-		case paymentorder.FieldAmount, paymentorder.FieldPayAmount, paymentorder.FieldFeeRate, paymentorder.FieldRefundAmount:
+		case paymentorder.FieldAmount, paymentorder.FieldPayAmount, paymentorder.FieldFeeRate, paymentorder.FieldBaseAmount, paymentorder.FieldPermanentCreditAmount, paymentorder.FieldBonusAmount, paymentorder.FieldRefundAmount:
 			values[i] = new(sql.NullFloat64)
-		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldPlanID, paymentorder.FieldSubscriptionGroupID, paymentorder.FieldSubscriptionDays:
+		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldBonusValidityDays, paymentorder.FieldPlanID, paymentorder.FieldSubscriptionGroupID, paymentorder.FieldSubscriptionDays:
 			values[i] = new(sql.NullInt64)
-		case paymentorder.FieldUserEmail, paymentorder.FieldUserName, paymentorder.FieldUserNotes, paymentorder.FieldRechargeCode, paymentorder.FieldOutTradeNo, paymentorder.FieldPaymentType, paymentorder.FieldPaymentTradeNo, paymentorder.FieldPayURL, paymentorder.FieldQrCode, paymentorder.FieldQrCodeImg, paymentorder.FieldOrderType, paymentorder.FieldProviderInstanceID, paymentorder.FieldProviderKey, paymentorder.FieldStatus, paymentorder.FieldRefundReason, paymentorder.FieldRefundRequestReason, paymentorder.FieldRefundRequestedBy, paymentorder.FieldFailedReason, paymentorder.FieldClientIP, paymentorder.FieldSrcHost, paymentorder.FieldSrcURL:
+		case paymentorder.FieldUserEmail, paymentorder.FieldUserName, paymentorder.FieldUserNotes, paymentorder.FieldRechargeCode, paymentorder.FieldRechargePackageID, paymentorder.FieldOutTradeNo, paymentorder.FieldPaymentType, paymentorder.FieldPaymentTradeNo, paymentorder.FieldPayURL, paymentorder.FieldQrCode, paymentorder.FieldQrCodeImg, paymentorder.FieldOrderType, paymentorder.FieldProviderInstanceID, paymentorder.FieldProviderKey, paymentorder.FieldStatus, paymentorder.FieldRefundReason, paymentorder.FieldRefundRequestReason, paymentorder.FieldRefundRequestedBy, paymentorder.FieldFailedReason, paymentorder.FieldClientIP, paymentorder.FieldSrcHost, paymentorder.FieldSrcURL:
 			values[i] = new(sql.NullString)
-		case paymentorder.FieldRefundAt, paymentorder.FieldRefundRequestedAt, paymentorder.FieldExpiresAt, paymentorder.FieldPaidAt, paymentorder.FieldCompletedAt, paymentorder.FieldFailedAt, paymentorder.FieldCreatedAt, paymentorder.FieldUpdatedAt:
+		case paymentorder.FieldBonusExpiresAt, paymentorder.FieldRefundAt, paymentorder.FieldRefundRequestedAt, paymentorder.FieldExpiresAt, paymentorder.FieldPaidAt, paymentorder.FieldCompletedAt, paymentorder.FieldFailedAt, paymentorder.FieldCreatedAt, paymentorder.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -209,6 +223,54 @@ func (_m *PaymentOrder) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field recharge_code", values[i])
 			} else if value.Valid {
 				_m.RechargeCode = value.String
+			}
+		case paymentorder.FieldRechargePackageID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field recharge_package_id", values[i])
+			} else if value.Valid {
+				_m.RechargePackageID = new(string)
+				*_m.RechargePackageID = value.String
+			}
+		case paymentorder.FieldBaseAmount:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field base_amount", values[i])
+			} else if value.Valid {
+				_m.BaseAmount = new(float64)
+				*_m.BaseAmount = value.Float64
+			}
+		case paymentorder.FieldPermanentCreditAmount:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field permanent_credit_amount", values[i])
+			} else if value.Valid {
+				_m.PermanentCreditAmount = new(float64)
+				*_m.PermanentCreditAmount = value.Float64
+			}
+		case paymentorder.FieldBonusAmount:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field bonus_amount", values[i])
+			} else if value.Valid {
+				_m.BonusAmount = value.Float64
+			}
+		case paymentorder.FieldBonusValidityDays:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field bonus_validity_days", values[i])
+			} else if value.Valid {
+				_m.BonusValidityDays = int(value.Int64)
+			}
+		case paymentorder.FieldBonusExpiresAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field bonus_expires_at", values[i])
+			} else if value.Valid {
+				_m.BonusExpiresAt = new(time.Time)
+				*_m.BonusExpiresAt = value.Time
+			}
+		case paymentorder.FieldRechargePackageSnapshot:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field recharge_package_snapshot", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.RechargePackageSnapshot); err != nil {
+					return fmt.Errorf("unmarshal field recharge_package_snapshot: %w", err)
+				}
 			}
 		case paymentorder.FieldOutTradeNo:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -482,6 +544,35 @@ func (_m *PaymentOrder) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("recharge_code=")
 	builder.WriteString(_m.RechargeCode)
+	builder.WriteString(", ")
+	if v := _m.RechargePackageID; v != nil {
+		builder.WriteString("recharge_package_id=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.BaseAmount; v != nil {
+		builder.WriteString("base_amount=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.PermanentCreditAmount; v != nil {
+		builder.WriteString("permanent_credit_amount=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("bonus_amount=")
+	builder.WriteString(fmt.Sprintf("%v", _m.BonusAmount))
+	builder.WriteString(", ")
+	builder.WriteString("bonus_validity_days=")
+	builder.WriteString(fmt.Sprintf("%v", _m.BonusValidityDays))
+	builder.WriteString(", ")
+	if v := _m.BonusExpiresAt; v != nil {
+		builder.WriteString("bonus_expires_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("recharge_package_snapshot=")
+	builder.WriteString(fmt.Sprintf("%v", _m.RechargePackageSnapshot))
 	builder.WriteString(", ")
 	builder.WriteString("out_trade_no=")
 	builder.WriteString(_m.OutTradeNo)
