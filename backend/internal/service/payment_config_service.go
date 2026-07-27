@@ -119,7 +119,6 @@ type UpdatePaymentConfigRequest struct {
 	AlipayForceQRCode *bool `json:"alipay_force_qrcode"`
 	// Use Alipay face-to-face precreate and an app deep link on mobile clients.
 	AlipayMobilePrecreateDeepLink *bool `json:"alipay_mobile_precreate_deep_link"`
-	AlipayForceQRCode       *bool              `json:"alipay_force_qrcode"`
 	RechargePackagesEnabled *bool              `json:"recharge_packages_enabled"`
 	AllowCustomRecharge     *bool              `json:"allow_custom_amount"`
 	RechargePackages        *[]RechargePackage `json:"recharge_packages"`
