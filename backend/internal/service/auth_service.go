@@ -20,6 +20,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 
 	"github.com/golang-jwt/jwt/v5"
+	entsql "entgo.io/ent/dialect/sql"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -43,6 +44,7 @@ var (
 	ErrInvitationCodeRequired  = infraerrors.BadRequest("INVITATION_CODE_REQUIRED", "invitation code is required")
 	ErrInvitationCodeInvalid   = infraerrors.BadRequest("INVITATION_CODE_INVALID", "invalid or used invitation code")
 	ErrOAuthInvitationRequired = infraerrors.Forbidden("OAUTH_INVITATION_REQUIRED", "invitation code required to complete oauth registration")
+	ErrRegistrationIPLimit     = infraerrors.Conflict("REGISTRATION_IP_LIMIT", "this IP has reached the registration account limit")
 )
 
 // maxTokenLength 限制 token 大小，避免超长 header 触发解析时的异常内存分配。
@@ -143,6 +145,19 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
 		return "", nil, ErrRegDisabled
 	}
+	if clientIP := registrationIP(ctx); clientIP != "" {
+		limit := s.settingService.RegistrationIPLimit(ctx)
+		if limit > 0 && !s.settingService.IsRegistrationIPWhitelisted(ctx, clientIP) && s.entClient != nil {
+			var rows entsql.Rows
+			err := s.entClient.Driver().Query(ctx, "SELECT COUNT(*) FROM users WHERE registration_ip = $1 AND deleted_at IS NULL", []any{clientIP}, &rows)
+			if err != nil { return "", nil, ErrServiceUnavailable }
+			var count int
+			if rows.Next() { err = rows.Scan(&count) }
+			_ = rows.Close()
+			if err != nil { return "", nil, ErrServiceUnavailable }
+			if count >= limit { return "", nil, ErrRegistrationIPLimit }
+		}
+	}
 
 	// 防止用户注册 LinuxDo OAuth 合成邮箱，避免第三方登录与本地账号发生碰撞。
 	if isReservedEmail(email) {
@@ -223,6 +238,7 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		RPMLimit:     defaultRPMLimit,
 		Status:       StatusActive,
 	}
+	user.RegistrationIP = registrationIP(ctx)
 
 	if err := s.userRepo.CreateWithEmailAliasGuard(ctx, user); err != nil {
 		// 优先检查邮箱冲突错误（竞态条件下可能发生）
@@ -231,6 +247,12 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		}
 		logger.LegacyPrintf("service.auth", "[Auth] Database error creating user: %v", err)
 		return "", nil, ErrServiceUnavailable
+	}
+	if clientIP := registrationIP(ctx); clientIP != "" && s.entClient != nil {
+		var result entsql.Result
+		if err := s.entClient.Driver().Exec(ctx, "UPDATE users SET registration_ip = $1 WHERE id = $2", []any{clientIP, user.ID}, &result); err != nil {
+			return "", nil, ErrServiceUnavailable
+		}
 	}
 	s.postAuthUserBootstrap(ctx, user, "email", true)
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")

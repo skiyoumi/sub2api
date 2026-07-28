@@ -6,6 +6,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 )
 
+const SettingKeyRegistrationIPLimit = "registration_ip_limit"
+const SettingKeyRegistrationIPWhitelist = "registration_ip_whitelist"
+
 // Status constants
 const (
 	StatusActive   = domain.StatusActive

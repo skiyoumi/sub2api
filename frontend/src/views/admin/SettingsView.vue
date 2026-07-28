@@ -1402,6 +1402,18 @@
                 <Toggle v-model="form.registration_enabled" />
               </div>
 
+              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                <label class="font-medium text-gray-900 dark:text-white">{{ t("admin.settings.registration.ipLimit") }}</label>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t("admin.settings.registration.ipLimitHint") }}</p>
+                <input v-model.number="form.registration_ip_limit" type="number" min="0" step="1" class="mt-3 w-32 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-dark-500 dark:bg-dark-700 dark:text-white" />
+              </div>
+
+              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                <label class="font-medium text-gray-900 dark:text-white">{{ t("admin.settings.registration.ipWhitelist") }}</label>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t("admin.settings.registration.ipWhitelistHint") }}</p>
+                <textarea v-model="registrationIPWhitelistDraft" rows="3" class="mt-3 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-dark-500 dark:bg-dark-700 dark:text-white" :placeholder="t('admin.settings.registration.ipWhitelistPlaceholder')" />
+              </div>
+
               <!-- Email Verification -->
               <div
                 class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
@@ -7956,6 +7968,7 @@ const smtpPasswordManuallyEdited = ref(false);
 const testEmailAddress = ref("");
 const registrationEmailSuffixWhitelistTags = ref<string[]>([]);
 const registrationEmailSuffixWhitelistDraft = ref("");
+const registrationIPWhitelistDraft = ref("");
 const forwardedClientIpHeaderDraft = ref("");
 const tablePageSizeOptionsInput = ref("10, 20, 50, 100");
 
@@ -8516,6 +8529,8 @@ type SettingsForm = Omit<
 
 const form = reactive<SettingsForm>({
   registration_enabled: true,
+  registration_ip_limit: 1,
+  registration_ip_whitelist: [],
   email_verify_enabled: false,
   registration_email_suffix_whitelist: [],
   promo_code_enabled: true,
@@ -9753,6 +9768,9 @@ async function loadSettings() {
         : [10, 20, 50, 100],
     );
     registrationEmailSuffixWhitelistDraft.value = "";
+    registrationIPWhitelistDraft.value = Array.isArray(settings.registration_ip_whitelist)
+      ? settings.registration_ip_whitelist.join("\n")
+      : "";
     form.smtp_password = "";
     smtpPasswordManuallyEdited.value = false;
     form.turnstile_secret_key = "";
@@ -10066,6 +10084,11 @@ async function saveSettings() {
 
     const payload: UpdateSettingsRequest = {
       registration_enabled: form.registration_enabled,
+      registration_ip_limit: Math.max(0, Math.floor(Number(form.registration_ip_limit) || 0)),
+      registration_ip_whitelist: registrationIPWhitelistDraft.value
+        .split(/[\n,]+/)
+        .map((value) => value.trim())
+        .filter(Boolean),
       email_verify_enabled: form.email_verify_enabled,
       registration_email_suffix_whitelist:
         registrationEmailSuffixWhitelistTags.value.map((suffix) =>

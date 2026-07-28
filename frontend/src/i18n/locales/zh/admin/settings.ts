@@ -101,6 +101,11 @@ export default {
       emailTabDisabledTitle: '邮箱验证未启用',
       emailTabDisabledHint: '请在「安全与认证」选项卡中启用邮箱验证后，再配置 SMTP 设置。',
       registration: {
+        ipWhitelist: '注册 IP 白名单',
+        ipWhitelistHint: '每行填写一个 IP 或 CIDR 网段，白名单地址不受单 IP 注册数量限制。',
+        ipWhitelistPlaceholder: '192.168.1.10\n10.0.0.0/8',
+        ipLimit: '单个 IP 注册账号数',
+        ipLimitHint: '同一 IP 最多允许注册的账号数量，填写 0 表示关闭限制。',
         title: '注册设置',
         description: '控制用户注册和验证',
         enableRegistration: '开放注册',

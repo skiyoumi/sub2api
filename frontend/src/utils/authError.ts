@@ -1,5 +1,6 @@
 interface APIErrorLike {
   message?: string
+  reason?: string
   response?: {
     data?: {
       detail?: string
@@ -15,11 +16,11 @@ function extractErrorMessage(error: unknown): string {
 
 export function buildAuthErrorMessage(
   error: unknown,
-  options: {
-    fallback: string
-  }
+  options: { fallback: string },
 ): string {
   const { fallback } = options
-  const message = extractErrorMessage(error)
-  return message || fallback
+  if ((error as APIErrorLike)?.reason === 'REGISTRATION_IP_LIMIT') {
+    return '\u5f53\u524d IP \u4e0d\u5141\u8bb8\u6ce8\u518c'
+  }
+  return extractErrorMessage(error) || fallback
 }

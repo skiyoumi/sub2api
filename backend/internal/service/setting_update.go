@@ -116,6 +116,11 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 
 	// 注册设置
 	updates[SettingKeyRegistrationEnabled] = strconv.FormatBool(settings.RegistrationEnabled)
+	if settings.RegistrationIPLimit < 0 { return nil, infraerrors.BadRequest("INVALID_REGISTRATION_IP_LIMIT", "registration IP limit must be non-negative") }
+	updates[SettingKeyRegistrationIPLimit] = strconv.Itoa(settings.RegistrationIPLimit)
+	whitelistJSON, err := json.Marshal(settings.RegistrationIPWhitelist)
+	if err != nil { return nil, fmt.Errorf("marshal registration IP whitelist: %w", err) }
+	updates[SettingKeyRegistrationIPWhitelist] = string(whitelistJSON)
 	updates[SettingKeyEmailVerifyEnabled] = strconv.FormatBool(settings.EmailVerifyEnabled)
 	registrationEmailSuffixWhitelistJSON, err := json.Marshal(settings.RegistrationEmailSuffixWhitelist)
 	if err != nil {

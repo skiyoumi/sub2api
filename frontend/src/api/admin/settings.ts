@@ -368,6 +368,8 @@ export function deriveWeChatConnectStoredMode(
 export interface SystemSettings {
   // Registration settings
   registration_enabled: boolean;
+  registration_ip_limit: number;
+  registration_ip_whitelist: string[];
   email_verify_enabled: boolean;
   registration_email_suffix_whitelist: string[];
   promo_code_enabled: boolean;
@@ -680,6 +682,8 @@ export interface SystemSettings {
 
 export interface UpdateSettingsRequest {
   registration_enabled?: boolean;
+  registration_ip_limit?: number;
+  registration_ip_whitelist?: string[];
   email_verify_enabled?: boolean;
   registration_email_suffix_whitelist?: string[];
   promo_code_enabled?: boolean;
