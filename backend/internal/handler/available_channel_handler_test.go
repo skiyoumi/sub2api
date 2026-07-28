@@ -7,12 +7,106 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func floatPtr(v float64) *float64 { return &v }
+
+func TestBuildProviderPricingResponse(t *testing.T) {
+	channels := []service.AvailableChannel{
+		{
+			Name:   "active",
+			Status: service.StatusActive,
+			Groups: []service.AvailableGroupRef{
+				{Name: "cc", Platform: service.PlatformAnthropic, RateMultiplier: 1.5},
+				{Name: "images", Platform: service.PlatformOpenAI, RateMultiplier: 2},
+				{Name: "private", Platform: service.PlatformAnthropic, RateMultiplier: 1, IsExclusive: true},
+			},
+			SupportedModels: []service.SupportedModel{
+				{
+					Name: "claude-sonnet-4-6", Platform: service.PlatformAnthropic,
+					Pricing: &service.ChannelModelPricing{
+						BillingMode: service.BillingModeToken,
+						InputPrice: floatPtr(3e-6), OutputPrice: floatPtr(15e-6),
+						CacheReadPrice: floatPtr(0.3e-6), CacheWritePrice: floatPtr(3.75e-6),
+					},
+				},
+				{
+					Name: "gpt-image-2", Platform: service.PlatformOpenAI,
+					Pricing: &service.ChannelModelPricing{
+						BillingMode: service.BillingModeImage,
+						PerRequestPrice: floatPtr(0.2),
+					},
+				},
+			},
+		},
+		{
+			Name: "duplicate",
+			Status: service.StatusActive,
+			Groups: []service.AvailableGroupRef{{Name: "cc", Platform: service.PlatformAnthropic, RateMultiplier: 99}},
+			SupportedModels: []service.SupportedModel{{
+				Name: "claude-sonnet-4-6", Platform: service.PlatformAnthropic,
+				Pricing: &service.ChannelModelPricing{InputPrice: floatPtr(99)},
+			}},
+		},
+		{
+			Name: "disabled", Status: service.StatusDisabled,
+			Groups: []service.AvailableGroupRef{{Name: "hidden", Platform: service.PlatformAnthropic, RateMultiplier: 1}},
+			SupportedModels: []service.SupportedModel{{
+				Name: "hidden-model", Platform: service.PlatformAnthropic,
+				Pricing: &service.ChannelModelPricing{InputPrice: floatPtr(1)},
+			}},
+		},
+	}
+
+	updatedAt := time.Date(2026, 7, 27, 3, 4, 5, 0, time.FixedZone("CST", 8*60*60))
+	got := buildProviderPricingResponse(channels, "Sub2API", "api.example.com", updatedAt)
+
+	require.Equal(t, providerPricingSchemaVersion, got.SchemaVersion)
+	require.True(t, got.Success)
+	require.Equal(t, "CNY", got.Data.Currency)
+	require.Equal(t, "per_1m_tokens", got.Data.PriceUnit)
+	require.Equal(t, "2026-07-26T19:04:05Z", got.Data.UpdatedAt)
+	require.Len(t, got.Data.Models, 3)
+
+	tokenModel := got.Data.Models[0]
+	require.Equal(t, "claude-sonnet-4-6", tokenModel.ModelName)
+	require.Equal(t, "cc", tokenModel.GroupName)
+	require.InDelta(t, 4.5, *tokenModel.InputPrice, 1e-9)
+	require.InDelta(t, 22.5, *tokenModel.OutputPrice, 1e-9)
+	require.InDelta(t, 0.45, *tokenModel.CacheInputPrice, 1e-9)
+	require.InDelta(t, 5.625, *tokenModel.CacheCreatePrice, 1e-9)
+
+	privateModel := got.Data.Models[1]
+	require.Equal(t, "claude-sonnet-4-6", privateModel.ModelName)
+	require.Equal(t, "private", privateModel.GroupName)
+	require.InDelta(t, 3, *privateModel.InputPrice, 1e-9)
+
+	callModel := got.Data.Models[2]
+	require.Equal(t, "gpt-image-2", callModel.ModelName)
+	require.Equal(t, "per_call", callModel.PriceUnit)
+	require.InDelta(t, 0.4, *callModel.UnitPrice, 1e-9)
+}
+
+func TestBuildProviderPricingResponseSkipsIncompletePricing(t *testing.T) {
+	channels := []service.AvailableChannel{{
+		Status: service.StatusActive,
+		Groups: []service.AvailableGroupRef{{Name: "g", Platform: service.PlatformOpenAI, RateMultiplier: 1}},
+		SupportedModels: []service.SupportedModel{
+			{Name: "missing-input", Platform: service.PlatformOpenAI, Pricing: &service.ChannelModelPricing{}},
+			{Name: "missing-call", Platform: service.PlatformOpenAI, Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModePerRequest}},
+		},
+	}}
+
+	got := buildProviderPricingResponse(channels, "", "", time.Unix(0, 0))
+	require.Empty(t, got.Data.Models)
+	require.NotNil(t, got.Data.Models)
+}
 
 func TestUserAvailableChannel_Unauthenticated401(t *testing.T) {
 	// 没有 AuthSubject 注入时，handler 应返回 401 且不触达 service 依赖。

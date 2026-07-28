@@ -1,7 +1,11 @@
 package handler
 
 import (
+	"net"
+	"net/http"
 	"sort"
+	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -9,6 +13,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+const providerPricingSchemaVersion = "1.1"
 
 // AvailableChannelHandler 处理用户侧「可用渠道」查询。
 //
@@ -114,6 +120,154 @@ type userAvailableChannel struct {
 	Name        string                       `json:"name"`
 	Description string                       `json:"description"`
 	Platforms   []userChannelPlatformSection `json:"platforms"`
+}
+
+type providerPricingResponse struct {
+	SchemaVersion string              `json:"schema_version"`
+	Success       bool                `json:"success"`
+	Message       string              `json:"message"`
+	Data          providerPricingData `json:"data"`
+}
+
+type providerPricingData struct {
+	Currency   string                 `json:"currency"`
+	PriceUnit  string                 `json:"price_unit"`
+	SiteName   string                 `json:"site_name,omitempty"`
+	SiteDomain string                 `json:"site_domain,omitempty"`
+	UpdatedAt  string                 `json:"updated_at"`
+	Models     []providerPricingModel `json:"models"`
+}
+
+type providerPricingModel struct {
+	ModelName          string   `json:"model_name"`
+	GroupName          string   `json:"group_name"`
+	PriceUnit          string   `json:"price_unit,omitempty"`
+	InputPrice         *float64 `json:"input_price,omitempty"`
+	OutputPrice        *float64 `json:"output_price"`
+	CacheInputPrice    *float64 `json:"cache_input_price"`
+	CacheCreatePrice   *float64 `json:"cache_create_price"`
+	CacheCreatePrice1h *float64 `json:"cache_create_price_1h"`
+	UnitPrice          *float64 `json:"unit_price,omitempty"`
+	Enabled            bool     `json:"enabled"`
+}
+
+// ProviderPricing exposes the public provider-pricing protocol consumed by hvoy.ai.
+// GET /api/provider/pricing
+func (h *AvailableChannelHandler) ProviderPricing(c *gin.Context) {
+	channels, err := h.channelService.ListAvailable(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"schema_version": providerPricingSchemaVersion,
+			"success": false,
+			"message": "failed to load pricing",
+			"data": nil,
+		})
+		return
+	}
+
+	siteName := ""
+	if h.settingService != nil {
+		if settings, settingsErr := h.settingService.GetPublicSettings(c.Request.Context()); settingsErr == nil {
+			siteName = settings.SiteName
+		}
+	}
+	host := c.Request.Host
+	if parsedHost, _, splitErr := net.SplitHostPort(host); splitErr == nil {
+		host = parsedHost
+	}
+
+	c.JSON(http.StatusOK, buildProviderPricingResponse(channels, siteName, host, time.Now().UTC()))
+}
+
+func buildProviderPricingResponse(channels []service.AvailableChannel, siteName, siteDomain string, updatedAt time.Time) providerPricingResponse {
+	models := make([]providerPricingModel, 0)
+	seen := make(map[string]struct{})
+	for _, channel := range channels {
+		if channel.Status != service.StatusActive {
+			continue
+		}
+		for _, group := range channel.Groups {
+			if group.Name == "" || group.Platform == "" {
+				continue
+			}
+			for _, model := range channel.SupportedModels {
+				if model.Platform != group.Platform || model.Name == "" || model.Pricing == nil {
+					continue
+				}
+				key := strings.ToLower(model.Name) + "\x00" + strings.ToLower(group.Name)
+				if _, exists := seen[key]; exists {
+					continue
+				}
+				row, ok := toProviderPricingModel(model, group)
+				if !ok {
+					continue
+				}
+				seen[key] = struct{}{}
+				models = append(models, row)
+			}
+		}
+	}
+	sort.SliceStable(models, func(i, j int) bool {
+		if models[i].ModelName == models[j].ModelName {
+			return models[i].GroupName < models[j].GroupName
+		}
+		return models[i].ModelName < models[j].ModelName
+	})
+
+	return providerPricingResponse{
+		SchemaVersion: providerPricingSchemaVersion,
+		Success:       true,
+		Message:       "",
+		Data: providerPricingData{
+			Currency:   "CNY",
+			PriceUnit:  "per_1m_tokens",
+			SiteName:   strings.TrimSpace(siteName),
+			SiteDomain: strings.TrimSpace(siteDomain),
+			UpdatedAt:  updatedAt.UTC().Format(time.RFC3339),
+			Models:     models,
+		},
+	}
+}
+
+func toProviderPricingModel(model service.SupportedModel, group service.AvailableGroupRef) (providerPricingModel, bool) {
+	p := model.Pricing
+	multiplier := group.RateMultiplier
+	if multiplier < 0 {
+		return providerPricingModel{}, false
+	}
+	if p.BillingMode == service.BillingModePerRequest || p.BillingMode == service.BillingModeImage {
+		if p.PerRequestPrice == nil {
+			return providerPricingModel{}, false
+		}
+		return providerPricingModel{
+			ModelName: model.Name,
+			GroupName: group.Name,
+			PriceUnit: "per_call",
+			UnitPrice: scaledPrice(p.PerRequestPrice, multiplier),
+			Enabled:   true,
+		}, true
+	}
+	if p.InputPrice == nil {
+		return providerPricingModel{}, false
+	}
+	const tokensPerMillion = 1_000_000
+	return providerPricingModel{
+		ModelName:        model.Name,
+		GroupName:        group.Name,
+		InputPrice:       scaledPrice(p.InputPrice, multiplier*tokensPerMillion),
+		OutputPrice:      scaledPrice(p.OutputPrice, multiplier*tokensPerMillion),
+		CacheInputPrice:  scaledPrice(p.CacheReadPrice, multiplier*tokensPerMillion),
+		CacheCreatePrice: scaledPrice(p.CacheWritePrice, multiplier*tokensPerMillion),
+		Enabled:          true,
+	}, true
+}
+
+func scaledPrice(price *float64, multiplier float64) *float64 {
+	if price == nil {
+		return nil
+	}
+	result := *price * multiplier
+	return &result
 }
 
 // List 列出当前用户可见的「可用渠道」。
