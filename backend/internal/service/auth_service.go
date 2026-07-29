@@ -25,6 +25,7 @@ import (
 )
 
 var (
+	ErrRegistrationDeviceLimit = infraerrors.Conflict("REGISTRATION_DEVICE_LIMIT", "Registration limit reached")
 	ErrInvalidCredentials      = infraerrors.Unauthorized("INVALID_CREDENTIALS", "invalid email or password")
 	ErrUserNotActive           = infraerrors.Forbidden("USER_NOT_ACTIVE", "user is not active")
 	ErrEmailExists             = infraerrors.Conflict("EMAIL_EXISTS", "email already exists")
@@ -145,6 +146,11 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
 		return "", nil, ErrRegDisabled
 	}
+	// A valid browser device ID provides the primary registration boundary.
+	// Keep the IP rule as a fallback for clients that cannot persist cookies;
+	// otherwise a shared NAT gateway would still limit an entire LAN to one
+	// account when the legacy default is 1.
+	if deviceID := registrationDeviceID(ctx); deviceID == "" {
 	if clientIP := registrationIP(ctx); clientIP != "" {
 		limit := s.settingService.RegistrationIPLimit(ctx)
 		if limit > 0 && !s.settingService.IsRegistrationIPWhitelisted(ctx, clientIP) && s.entClient != nil {
@@ -157,6 +163,17 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 			if err != nil { return "", nil, ErrServiceUnavailable }
 			if count >= limit { return "", nil, ErrRegistrationIPLimit }
 		}
+	}
+	}
+	if deviceID := registrationDeviceID(ctx); deviceID != "" && s.entClient != nil {
+		var rows entsql.Rows
+		err := s.entClient.Driver().Query(ctx, "SELECT COUNT(*) FROM users WHERE registration_device_id = $1 AND deleted_at IS NULL", []any{deviceID}, &rows)
+		if err != nil { return "", nil, ErrServiceUnavailable }
+		var count int
+		if rows.Next() { err = rows.Scan(&count) }
+		_ = rows.Close()
+		if err != nil { return "", nil, ErrServiceUnavailable }
+		if count >= 1 { return "", nil, ErrRegistrationDeviceLimit }
 	}
 
 	// 防止用户注册 LinuxDo OAuth 合成邮箱，避免第三方登录与本地账号发生碰撞。
@@ -251,6 +268,13 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	if clientIP := registrationIP(ctx); clientIP != "" && s.entClient != nil {
 		var result entsql.Result
 		if err := s.entClient.Driver().Exec(ctx, "UPDATE users SET registration_ip = $1 WHERE id = $2", []any{clientIP, user.ID}, &result); err != nil {
+			return "", nil, ErrServiceUnavailable
+		}
+	}
+	if deviceID := registrationDeviceID(ctx); deviceID != "" && s.entClient != nil {
+		var result entsql.Result
+		if err := s.entClient.Driver().Exec(ctx, "UPDATE users SET registration_device_id = $1 WHERE id = $2", []any{deviceID, user.ID}, &result); err != nil {
+			_ = s.userRepo.Delete(ctx, user.ID)
 			return "", nil, ErrServiceUnavailable
 		}
 	}

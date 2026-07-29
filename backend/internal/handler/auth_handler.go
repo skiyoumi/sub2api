@@ -171,8 +171,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	ctx := service.WithRegistrationIP(c.Request.Context(), ip.GetClientIP(c))
+	ctx = service.WithRegistrationDeviceID(ctx, h.ensureRegistrationDevice(c))
 	_, user, err := h.authService.RegisterWithVerification(
-		service.WithRegistrationIP(c.Request.Context(), ip.GetClientIP(c)),
+		ctx,
 		req.Email,
 		req.Password,
 		req.VerifyCode,

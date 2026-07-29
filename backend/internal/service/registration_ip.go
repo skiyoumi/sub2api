@@ -9,6 +9,7 @@ import (
 )
 
 type registrationIPContextKey struct{}
+type registrationDeviceContextKey struct{}
 
 func WithRegistrationIP(ctx context.Context, ip string) context.Context {
 	return context.WithValue(ctx, registrationIPContextKey{}, strings.TrimSpace(ip))
@@ -17,6 +18,15 @@ func WithRegistrationIP(ctx context.Context, ip string) context.Context {
 func registrationIP(ctx context.Context) string {
 	ip, _ := ctx.Value(registrationIPContextKey{}).(string)
 	return strings.TrimSpace(ip)
+}
+
+func WithRegistrationDeviceID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, registrationDeviceContextKey{}, strings.TrimSpace(id))
+}
+
+func registrationDeviceID(ctx context.Context) string {
+	id, _ := ctx.Value(registrationDeviceContextKey{}).(string)
+	return strings.TrimSpace(id)
 }
 
 func (s *SettingService) RegistrationIPLimit(ctx context.Context) int {
