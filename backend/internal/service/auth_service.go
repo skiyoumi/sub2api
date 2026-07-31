@@ -25,6 +25,7 @@ import (
 )
 
 var (
+	ErrRegistrationHourlyIPLimit = infraerrors.Conflict("REGISTRATION_HOURLY_IP_LIMIT", "Registration limit reached")
 	ErrRegistrationDeviceLimit = infraerrors.Conflict("REGISTRATION_DEVICE_LIMIT", "Registration limit reached")
 	ErrInvalidCredentials      = infraerrors.Unauthorized("INVALID_CREDENTIALS", "invalid email or password")
 	ErrUserNotActive           = infraerrors.Forbidden("USER_NOT_ACTIVE", "user is not active")
@@ -146,11 +147,26 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
 		return "", nil, ErrRegDisabled
 	}
-	// A valid browser device ID provides the primary registration boundary.
-	// Keep the IP rule as a fallback for clients that cannot persist cookies;
-	// otherwise a shared NAT gateway would still limit an entire LAN to one
-	// account when the legacy default is 1.
-	if deviceID := registrationDeviceID(ctx); deviceID == "" {
+	if deviceID := registrationDeviceID(ctx); deviceID != "" && s.entClient != nil {
+		var rows entsql.Rows
+		err := s.entClient.Driver().Query(ctx, "SELECT COUNT(*) FROM users WHERE registration_device_id = $1 AND deleted_at IS NULL", []any{deviceID}, &rows)
+		if err != nil { return "", nil, ErrServiceUnavailable }
+		var count int
+		if rows.Next() { err = rows.Scan(&count) }
+		_ = rows.Close()
+		if err != nil { return "", nil, ErrServiceUnavailable }
+		if count >= 1 { return "", nil, ErrRegistrationDeviceLimit }
+	}
+	if clientIP := registrationIP(ctx); clientIP != "" && s.entClient != nil && !s.settingService.IsRegistrationIPWhitelisted(ctx, clientIP) {
+		var rows entsql.Rows
+		err := s.entClient.Driver().Query(ctx, "SELECT COUNT(*) FROM users WHERE registration_ip = $1 AND created_at >= NOW() - INTERVAL '1 hour' AND deleted_at IS NULL", []any{clientIP}, &rows)
+		if err != nil { return "", nil, ErrServiceUnavailable }
+		var count int
+		if rows.Next() { err = rows.Scan(&count) }
+		_ = rows.Close()
+		if err != nil { return "", nil, ErrServiceUnavailable }
+		if count >= 2 { return "", nil, ErrRegistrationHourlyIPLimit }
+	}
 	if clientIP := registrationIP(ctx); clientIP != "" {
 		limit := s.settingService.RegistrationIPLimit(ctx)
 		if limit > 0 && !s.settingService.IsRegistrationIPWhitelisted(ctx, clientIP) && s.entClient != nil {
@@ -164,18 +180,6 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 			if count >= limit { return "", nil, ErrRegistrationIPLimit }
 		}
 	}
-	}
-	if deviceID := registrationDeviceID(ctx); deviceID != "" && s.entClient != nil {
-		var rows entsql.Rows
-		err := s.entClient.Driver().Query(ctx, "SELECT COUNT(*) FROM users WHERE registration_device_id = $1 AND deleted_at IS NULL", []any{deviceID}, &rows)
-		if err != nil { return "", nil, ErrServiceUnavailable }
-		var count int
-		if rows.Next() { err = rows.Scan(&count) }
-		_ = rows.Close()
-		if err != nil { return "", nil, ErrServiceUnavailable }
-		if count >= 1 { return "", nil, ErrRegistrationDeviceLimit }
-	}
-
 	// 防止用户注册 LinuxDo OAuth 合成邮箱，避免第三方登录与本地账号发生碰撞。
 	if isReservedEmail(email) {
 		return "", nil, ErrEmailReserved
