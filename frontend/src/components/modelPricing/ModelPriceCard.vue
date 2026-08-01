@@ -116,15 +116,19 @@ const PriceMetric = defineComponent({
       ]) : null,
       comparison.value != null ? h('div', {
         class: comparison.value.premium
-          ? 'mt-2 overflow-hidden rounded bg-red-50 text-[10px] dark:bg-red-950/30'
-          : 'mt-2 overflow-hidden rounded bg-emerald-50 text-[10px] dark:bg-emerald-950/30'
+          ? 'mt-2 flex h-5 overflow-hidden rounded text-[10px] dark:bg-red-950/30'
+          : 'mt-2 flex h-5 overflow-hidden rounded text-[10px] dark:bg-emerald-950/30'
       }, [
-        h('div', {
+        h('span', {
           class: comparison.value.premium
-            ? 'flex h-5 items-center whitespace-nowrap bg-gradient-to-r from-amber-500 to-red-500 px-2 text-white'
-            : 'flex h-5 items-center whitespace-nowrap bg-gradient-to-r from-emerald-500 to-teal-500 px-2 text-white',
-          style: { width: `${Math.max(48, Math.min(100, comparison.value.percent))}%` }
-        }, `${comparison.value.premium ? t('modelPricing.premium') : t('modelPricing.save')} ${comparison.value.percent.toFixed(1)}%`)
+            ? 'flex w-[42%] shrink-0 items-center justify-center bg-red-500 px-1 font-medium text-white'
+            : 'flex w-[42%] shrink-0 items-center justify-center bg-emerald-600 px-1 font-medium text-white'
+        }, comparison.value.premium ? t('modelPricing.premium') : t('modelPricing.save')),
+        h('span', {
+          class: comparison.value.premium
+            ? 'flex min-w-0 flex-1 items-center justify-end bg-red-50 px-2 font-medium text-red-600 dark:bg-red-950/30 dark:text-red-300'
+            : 'flex min-w-0 flex-1 items-center justify-end bg-emerald-50 px-2 font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
+        }, `${comparison.value.percent.toFixed(1)}%`)
       ]) : h('div', { class: 'mt-2 h-5 rounded bg-gray-100 dark:bg-dark-700' })
     ])
   }

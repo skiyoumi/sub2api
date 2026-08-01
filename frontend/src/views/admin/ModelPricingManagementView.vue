@@ -16,7 +16,7 @@
             <span>{{ t('admin.modelPricing.selectedModels') }} <strong class="ml-1 text-sm text-gray-900 dark:text-white">{{ selectedModelCount }}</strong></span>
           </div>
         </div>
-        <button class="btn-primary inline-flex min-w-24 items-center justify-center gap-2" :disabled="saving || loading" @click="save">
+        <button class="btn-primary inline-flex min-w-24 items-center justify-center gap-2 rounded-lg shadow-sm transition-shadow hover:shadow-md" :disabled="saving || loading" @click="save">
           <Icon name="check" size="sm" />
           {{ saving ? t('common.saving') : t('common.save') }}
         </button>
