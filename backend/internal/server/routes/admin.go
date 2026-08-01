@@ -38,6 +38,7 @@ func RegisterAdminRoutes(
 
 		// 分组管理
 		registerGroupRoutes(admin, h)
+		registerModelPricingAdminRoutes(admin, h)
 
 		// 账号管理
 		registerAccountRoutes(admin, h, stepUpAuth)
@@ -119,6 +120,14 @@ func RegisterAdminRoutes(
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+	}
+}
+
+func registerModelPricingAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	pricing := admin.Group("/model-pricing")
+	{
+		pricing.GET("", h.ModelPlaza.GetPricingConfig)
+		pricing.PUT("", h.ModelPlaza.UpdatePricingConfig)
 	}
 }
 

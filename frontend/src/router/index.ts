@@ -185,6 +185,17 @@ const routes: RouteRecordRaw[] = [
       titleKey: 'modelPlaza.title'
     }
   },
+  {
+    path: '/model-pricing',
+    name: 'ModelPricing',
+    component: () => import('@/views/user/ModelPricingView.vue'),
+    meta: {
+      requiresAuth: true,
+      title: 'Model Pricing',
+      titleKey: 'modelPricing.title',
+      descriptionKey: 'modelPricing.description'
+    }
+  },
 
   // ==================== User Routes ====================
   {
@@ -459,6 +470,18 @@ const routes: RouteRecordRaw[] = [
       title: 'Group Management',
       titleKey: 'admin.groups.title',
       descriptionKey: 'admin.groups.description'
+    }
+  },
+  {
+    path: '/admin/model-pricing',
+    name: 'AdminModelPricing',
+    component: () => import('@/views/admin/ModelPricingManagementView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Model Pricing Management',
+      titleKey: 'admin.modelPricing.title',
+      descriptionKey: 'admin.modelPricing.description'
     }
   },
   {

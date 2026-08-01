@@ -167,6 +167,8 @@ export default {
     channels: 'Channels',
     availableChannels: 'Available Channels',
     modelPlaza: 'Model Plaza',
+    modelPricing: 'Model Pricing',
+    modelPricingManagement: 'Model Pricing',
     subscriptions: 'Subscriptions',
     accounts: 'Accounts',
     proxies: 'Proxies',

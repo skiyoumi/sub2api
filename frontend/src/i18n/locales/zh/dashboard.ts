@@ -525,6 +525,31 @@ export default {
     }
   },
 
+  modelPricing: {
+    title: '模型价格',
+    description: '按分组查看模型实时价格，并与官方价格对比',
+    search: '搜索模型',
+    models: '个模型',
+    cards: '卡片',
+    table: '表格',
+    input: '输入 / 1M',
+    cacheInput: '缓存输入 / 1M',
+    output: '输出 / 1M',
+    current: '当前',
+    official: '官方',
+    save: '省',
+    premium: '溢价',
+    effectiveRate: '生效倍率',
+    perToken: '按 Token',
+    perRequest: '按次',
+    perImage: '按图片',
+    tier: '档位',
+    loadFailed: '加载模型价格失败',
+    notConfigured: '模型价格暂未开放',
+    notConfiguredHint: '管理员启用并选择分组与模型后将在这里展示',
+    noResults: '没有匹配的模型'
+  },
+
   // Model Plaza (public group/model pricing showcase)
   modelPlaza: {
     title: '模型广场',

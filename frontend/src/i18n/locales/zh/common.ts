@@ -167,6 +167,8 @@ export default {
     channels: '渠道管理',
     availableChannels: '可用渠道',
     modelPlaza: '模型广场',
+    modelPricing: '模型价格',
+    modelPricingManagement: '模型价格管理',
     subscriptions: '订阅管理',
     accounts: '账号管理',
     proxies: 'IP管理',

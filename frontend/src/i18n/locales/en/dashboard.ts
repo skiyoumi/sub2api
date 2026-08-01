@@ -520,6 +520,31 @@ export default {
     }
   },
 
+  modelPricing: {
+    title: 'Model Pricing',
+    description: 'Compare live group pricing with official model prices',
+    search: 'Search models',
+    models: 'models',
+    cards: 'Cards',
+    table: 'Table',
+    input: 'Input / 1M',
+    cacheInput: 'Cached input / 1M',
+    output: 'Output / 1M',
+    current: 'Current',
+    official: 'Official',
+    save: 'Save',
+    premium: 'Premium',
+    effectiveRate: 'Effective rate',
+    perToken: 'Per token',
+    perRequest: 'Per request',
+    perImage: 'Per image',
+    tier: 'Tier',
+    loadFailed: 'Failed to load model pricing',
+    notConfigured: 'Model pricing is not available yet',
+    notConfiguredHint: 'Models will appear after an administrator enables and configures this page',
+    noResults: 'No matching models'
+  },
+
   // Model Plaza (public group/model pricing showcase)
   modelPlaza: {
     title: 'Model Plaza',
