@@ -5702,7 +5702,10 @@ const handleUpdateGroup = async () => {
       model_routing: convertRoutingRulesToApiFormat(
         editModelRoutingRules.value,
       ),
-      models_list_config: buildModelsListConfig(editModelsListState),
+      models_list_config: {
+        ...buildModelsListConfig(editModelsListState),
+        cc_switch_defaults: editingGroup.value?.models_list_config?.cc_switch_defaults,
+      },
       supported_model_scopes: normalizeSupportedModelScopesForPlatform(
         editForm.platform,
         editForm.supported_model_scopes,

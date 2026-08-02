@@ -145,6 +145,7 @@ type Group struct {
 	MaxReasoningEffort string `json:"max_reasoning_effort"`
 	// ReasoningEffortMappings OpenAI/Codex 推理强度精确映射。
 	ReasoningEffortMappings []domain.ReasoningEffortMapping `json:"reasoning_effort_mappings"`
+	CCSwitchDefaults        domain.GroupCCSwitchDefaults    `json:"cc_switch_defaults"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

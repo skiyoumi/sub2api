@@ -3,7 +3,20 @@ package service
 import "strings"
 
 func normalizeGroupModelsListConfig(cfg GroupModelsListConfig) GroupModelsListConfig {
-	out := GroupModelsListConfig{Enabled: cfg.Enabled}
+	out := GroupModelsListConfig{
+		Enabled: cfg.Enabled,
+		CCSwitchDefaults: GroupCCSwitchDefaults{
+			Claude: GroupCCSwitchClaudeDefaults{
+				Model:  strings.TrimSpace(cfg.CCSwitchDefaults.Claude.Model),
+				Haiku:  strings.TrimSpace(cfg.CCSwitchDefaults.Claude.Haiku),
+				Sonnet: strings.TrimSpace(cfg.CCSwitchDefaults.Claude.Sonnet),
+				Opus:   strings.TrimSpace(cfg.CCSwitchDefaults.Claude.Opus),
+			},
+			Codex:    strings.TrimSpace(cfg.CCSwitchDefaults.Codex),
+			Gemini:   strings.TrimSpace(cfg.CCSwitchDefaults.Gemini),
+			OpenCode: strings.TrimSpace(cfg.CCSwitchDefaults.OpenCode),
+		},
+	}
 	if len(cfg.Models) == 0 {
 		return out
 	}

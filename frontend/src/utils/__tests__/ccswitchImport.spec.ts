@@ -1,96 +1,55 @@
 import { describe, expect, it } from 'vitest'
-import {
-  GROK_CC_SWITCH_MODEL,
-  OPENAI_CC_SWITCH_CODEX_MODEL,
-  buildCcSwitchImportDeeplink
-} from '@/utils/ccswitchImport'
-import type { GroupPlatform } from '@/types'
+import { buildCcSwitchImportDeeplink, withoutV1Endpoint, type CcSwitchApp } from '@/utils/ccswitchImport'
 
 function paramsFromDeeplink(deeplink: string): URLSearchParams {
-  const query = deeplink.split('?')[1] || ''
-  return new URLSearchParams(query)
+  return new URLSearchParams(deeplink.split('?')[1] || '')
+}
+
+const baseInput = {
+  baseUrl: 'https://api.example.com/v1',
+  providerName: 'Sub2API',
+  apiKey: 'sk-test',
+  usageScript: 'return true',
+  model: 'model-main',
 }
 
 describe('ccswitchImport utils', () => {
-  it('defaults OpenAI CC Switch imports to the current Codex model', () => {
-    expect(OPENAI_CC_SWITCH_CODEX_MODEL).toBe('gpt-5.5')
+  it.each([
+    ['https://api.example.com/v1', 'https://api.example.com'],
+    ['https://api.example.com/v1/', 'https://api.example.com'],
+    ['https://api.example.com/', 'https://api.example.com'],
+  ])('removes a trailing v1 from Claude base URL %s', (input, expected) => {
+    expect(withoutV1Endpoint(input)).toBe(expected)
   })
 
-  it('defaults Grok Build imports to the current Grok model', () => {
-    expect(GROK_CC_SWITCH_MODEL).toBe('grok-4.5')
-  })
-
-  const baseInput = {
-    baseUrl: 'https://api.example.com',
-    providerName: 'Sub2API',
-    apiKey: 'sk-test',
-    usageScript: 'return true'
-  }
-
-  it('adds the Codex model parameter for OpenAI imports', () => {
-    const params = paramsFromDeeplink(
-      buildCcSwitchImportDeeplink({
-        ...baseInput,
-        platform: 'openai',
-        clientType: 'claude'
-      })
-    )
-
-    expect(params.get('resource')).toBe('provider')
-    expect(params.get('app')).toBe('codex')
-    expect(params.get('endpoint')).toBe(baseInput.baseUrl)
-    expect(params.get('model')).toBe(OPENAI_CC_SWITCH_CODEX_MODEL)
+  it.each(['claude', 'codex', 'gemini', 'opencode'] as CcSwitchApp[])('imports the selected %s application and model', (app) => {
+    const params = paramsFromDeeplink(buildCcSwitchImportDeeplink({ ...baseInput, app }))
+    expect(params.get('app')).toBe(app)
+    expect(params.get('model')).toBe(baseInput.model)
+    expect(params.get('endpoint')).toBe(app === 'claude' ? 'https://api.example.com' : baseInput.baseUrl)
     expect(atob(params.get('usageScript') || '')).toBe(baseInput.usageScript)
   })
 
-  it.each([
-    'https://api.example.com',
-    'https://api.example.com/',
-    'https://api.example.com/v1',
-    'https://api.example.com/v1/'
-  ])('imports Grok Build with one /v1 suffix for base URL %s', (baseUrl) => {
-    const params = paramsFromDeeplink(
-      buildCcSwitchImportDeeplink({
-        ...baseInput,
-        baseUrl,
-        platform: 'grok',
-        clientType: 'claude'
-      })
-    )
-
-    expect(params.get('app')).toBe('grokbuild')
-    expect(params.get('endpoint')).toBe('https://api.example.com/v1')
-    expect(params.get('model')).toBe(GROK_CC_SWITCH_MODEL)
+  it('adds Claude family model parameters only for Claude imports', () => {
+    const params = paramsFromDeeplink(buildCcSwitchImportDeeplink({
+      ...baseInput,
+      app: 'claude',
+      haikuModel: 'haiku',
+      sonnetModel: 'sonnet',
+      opusModel: 'opus',
+    }))
+    expect(params.get('haikuModel')).toBe('haiku')
+    expect(params.get('sonnetModel')).toBe('sonnet')
+    expect(params.get('opusModel')).toBe('opus')
   })
 
-  it.each([
-    { platform: 'anthropic' as GroupPlatform, clientType: 'claude' as const, app: 'claude' },
-    { platform: 'gemini' as GroupPlatform, clientType: 'gemini' as const, app: 'gemini' }
-  ])('does not add a model parameter for $platform imports', ({ platform, clientType, app }) => {
-    const params = paramsFromDeeplink(
-      buildCcSwitchImportDeeplink({
-        ...baseInput,
-        platform,
-        clientType
-      })
-    )
-
-    expect(params.get('app')).toBe(app)
-    expect(params.get('endpoint')).toBe(baseInput.baseUrl)
-    expect(params.has('model')).toBe(false)
-  })
-
-  it('keeps Antigravity imports on the selected client endpoint without a model parameter', () => {
-    const params = paramsFromDeeplink(
-      buildCcSwitchImportDeeplink({
-        ...baseInput,
-        platform: 'antigravity',
-        clientType: 'gemini'
-      })
-    )
-
-    expect(params.get('app')).toBe('gemini')
-    expect(params.get('endpoint')).toBe(`${baseInput.baseUrl}/antigravity`)
-    expect(params.has('model')).toBe(false)
+  it('supports a platform-specific endpoint without changing the provider homepage', () => {
+    const params = paramsFromDeeplink(buildCcSwitchImportDeeplink({
+      ...baseInput,
+      app: 'claude',
+      endpointBaseUrl: 'https://api.example.com/antigravity',
+    }))
+    expect(params.get('homepage')).toBe(baseInput.baseUrl)
+    expect(params.get('endpoint')).toBe('https://api.example.com/antigravity')
   })
 })

@@ -561,6 +561,7 @@ export interface Group {
   messages_dispatch_model_config?: OpenAIMessagesDispatchModelConfig
   require_oauth_only: boolean
   require_privacy_set: boolean
+  cc_switch_defaults?: CcSwitchDefaults
   created_at: string
   updated_at: string
 }
@@ -593,6 +594,19 @@ export interface AdminGroup extends Group {
 export interface ModelsListConfig {
   enabled: boolean
   models: string[]
+  cc_switch_defaults?: CcSwitchDefaults
+}
+
+export interface CcSwitchDefaults {
+  claude?: {
+    model?: string
+    haiku?: string
+    sonnet?: string
+    opus?: string
+  }
+  codex?: string
+  gemini?: string
+  opencode?: string
 }
 
 export type CompositeRouteMatchType = 'exact' | 'prefix'

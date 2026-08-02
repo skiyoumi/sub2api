@@ -214,6 +214,20 @@ export default {
       geminiCli: 'Gemini CLI',
       geminiCliDesc: '导入为 Gemini CLI 配置'
     },
+    ccsImport: {
+      title: '填入 CC Switch',
+      app: '应用',
+      name: '名称',
+      mainModel: '主模型',
+      haikuModel: 'Haiku 模型',
+      sonnetModel: 'Sonnet 模型',
+      opusModel: 'Opus 模型',
+      loadingModels: '正在加载当前密钥支持的模型...',
+      modelHint: '已按当前密钥支持的模型显示（{count} 个）',
+      loadFailed: '加载支持模型失败',
+      noModels: '当前密钥没有可用模型',
+      open: '打开 CC Switch'
+    },
     // 配额和有效期
     quotaLimit: '额度限制',
     quotaAmount: '额度金额 (USD)',

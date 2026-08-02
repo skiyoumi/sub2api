@@ -473,6 +473,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/cc-switch-defaults',
+    name: 'AdminCcSwitchDefaults',
+    component: () => import('@/views/admin/CcSwitchDefaultsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'CC Switch Defaults',
+      titleKey: 'admin.ccSwitchDefaults.title',
+      descriptionKey: 'admin.ccSwitchDefaults.description'
+    }
+  },
+  {
     path: '/admin/model-pricing',
     name: 'AdminModelPricing',
     component: () => import('@/views/admin/ModelPricingManagementView.vue'),

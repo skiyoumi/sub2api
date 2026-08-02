@@ -12,6 +12,8 @@ import (
 
 type OpenAIMessagesDispatchModelConfig = domain.OpenAIMessagesDispatchModelConfig
 type GroupModelsListConfig = domain.GroupModelsListConfig
+type GroupCCSwitchDefaults = domain.GroupCCSwitchDefaults
+type GroupCCSwitchClaudeDefaults = domain.GroupCCSwitchClaudeDefaults
 type ReasoningEffortMapping = domain.ReasoningEffortMapping
 
 type Group struct {

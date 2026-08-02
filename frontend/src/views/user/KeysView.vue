@@ -998,52 +998,16 @@
       @close="closeUseKeyModal"
     />
 
-    <!-- CCS Client Selection Dialog for Antigravity -->
-    <BaseDialog
-      :show="showCcsClientSelect"
-      :title="t('keys.ccsClientSelect.title')"
-      width="narrow"
-      @close="closeCcsClientSelect"
-    >
-      <div class="space-y-4">
-        <p class="text-sm text-gray-600 dark:text-gray-400">
-          {{ t('keys.ccsClientSelect.description') }}
-	        </p>
-	        <div class="grid grid-cols-2 gap-3">
-	          <button
-	            @click="handleCcsClientSelect('claude')"
-	            class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 dark:border-dark-600 hover:border-primary-500 dark:hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-all"
-	          >
-	            <Icon name="terminal" size="xl" class="text-gray-600 dark:text-gray-400" />
-	            <span class="font-medium text-gray-900 dark:text-white">{{
-	              t('keys.ccsClientSelect.claudeCode')
-	            }}</span>
-	            <span class="text-xs text-gray-500 dark:text-gray-400">{{
-	              t('keys.ccsClientSelect.claudeCodeDesc')
-	            }}</span>
-	          </button>
-	          <button
-	            @click="handleCcsClientSelect('gemini')"
-	            class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 dark:border-dark-600 hover:border-primary-500 dark:hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-all"
-	          >
-	            <Icon name="sparkles" size="xl" class="text-gray-600 dark:text-gray-400" />
-	            <span class="font-medium text-gray-900 dark:text-white">{{
-	              t('keys.ccsClientSelect.geminiCli')
-	            }}</span>
-	            <span class="text-xs text-gray-500 dark:text-gray-400">{{
-	              t('keys.ccsClientSelect.geminiCliDesc')
-	            }}</span>
-	          </button>
-	        </div>
-	      </div>
-      <template #footer>
-        <div class="flex justify-end">
-          <button @click="closeCcsClientSelect" class="btn btn-secondary">
-            {{ t('common.cancel') }}
-          </button>
-        </div>
-      </template>
-    </BaseDialog>
+    <CcSwitchImportModal
+      :show="showCcsImport"
+      :api-key="pendingCcsRow?.key || ''"
+      :base-url="ccsBaseUrl"
+      :provider-name="ccsProviderName"
+      :platform="pendingCcsRow?.group?.platform"
+      :defaults="pendingCcsRow?.group?.cc_switch_defaults"
+      @close="closeCcsImport"
+      @submit="executeCcsImport"
+    />
 
     <!-- Group Selector Dropdown (Teleported to body to avoid overflow clipping) -->
     <Teleport to="body">
@@ -1137,6 +1101,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import SearchInput from '@/components/common/SearchInput.vue'
 	import Icon from '@/components/icons/Icon.vue'
 	import UseKeyModal from '@/components/keys/UseKeyModal.vue'
+	import CcSwitchImportModal from '@/components/keys/CcSwitchImportModal.vue'
 	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
@@ -1147,7 +1112,8 @@ import { formatDateTime } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
 import {
   buildCcSwitchImportDeeplink,
-  type CcSwitchClientType
+  withoutV1Endpoint,
+  type CcSwitchApp
 } from '@/utils/ccswitchImport'
 
 // Helper to format date for datetime-local input
@@ -1300,13 +1266,19 @@ const showDeleteDialog = ref(false)
 const showResetQuotaDialog = ref(false)
 const showResetRateLimitDialog = ref(false)
 const showUseKeyModal = ref(false)
-const showCcsClientSelect = ref(false)
+const showCcsImport = ref(false)
 const showColumnDropdown = ref(false)
 const pendingCcsRow = ref<ApiKey | null>(null)
 const selectedKey = ref<ApiKey | null>(null)
 const copiedKeyId = ref<number | null>(null)
 const groupSelectorKeyId = ref<number | null>(null)
 const publicSettings = ref<PublicSettings | null>(null)
+const ccsBaseUrl = computed(() => publicSettings.value?.api_base_url || (typeof window !== 'undefined' ? window.location.origin : ''))
+const ccsProviderName = computed(() => {
+  const siteName = (publicSettings.value?.site_name || 'sub2api').trim() || 'sub2api'
+  const groupName = pendingCcsRow.value?.group?.name?.trim()
+  return groupName ? `${siteName} - ${groupName}` : siteName
+})
 const dropdownRef = ref<HTMLElement | null>(null)
 const columnDropdownRef = ref<HTMLElement | null>(null)
 const dropdownPosition = ref<{ top?: number; bottom?: number; left: number } | null>(null)
@@ -1870,26 +1842,21 @@ const resetRateLimitUsage = async () => {
 }
 
 const importToCcswitch = (row: ApiKey) => {
-  const platform = row.group?.platform || 'anthropic'
-
-  // For antigravity platform, show client selection dialog
-  if (platform === 'antigravity') {
-    pendingCcsRow.value = row
-    showCcsClientSelect.value = true
-    return
-  }
-
-  // For other platforms, execute directly
-  executeCcsImport(row, platform === 'gemini' ? 'gemini' : 'claude')
+  pendingCcsRow.value = row
+  showCcsImport.value = true
 }
 
-const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
+const executeCcsImport = (selection: { app: CcSwitchApp; name: string; model: string; haikuModel?: string; sonnetModel?: string; opusModel?: string }) => {
+  const row = pendingCcsRow.value
+  if (!row) return
   const baseUrl = publicSettings.value?.api_base_url || window.location.origin
-  const platform = row.group?.platform || 'anthropic'
+  const importBaseUrl = row.group?.platform === 'antigravity'
+    ? `${withoutV1Endpoint(baseUrl)}/antigravity`
+    : baseUrl
 
   const usageScript = `({
     request: {
-      url: "{{baseUrl}}/v1/usage",
+      url: "https://api.modelscube.com/v1/usage",
       method: "GET",
       headers: { "Authorization": "Bearer {{apiKey}}" }
     },
@@ -1903,17 +1870,21 @@ const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
       };
     }
   })`
-  const providerName = (publicSettings.value?.site_name || 'sub2api').trim() || 'sub2api'
   const deeplink = buildCcSwitchImportDeeplink({
     baseUrl,
-    platform,
-    clientType,
-    providerName,
+    endpointBaseUrl: importBaseUrl,
+    app: selection.app,
+    providerName: selection.name,
     apiKey: row.key,
-    usageScript
+    usageScript,
+    model: selection.model,
+    haikuModel: selection.haikuModel,
+    sonnetModel: selection.sonnetModel,
+    opusModel: selection.opusModel,
   })
 
   try {
+    closeCcsImport()
     window.open(deeplink, '_self')
 
     // Check if the protocol handler worked by detecting if we're still focused
@@ -1928,16 +1899,8 @@ const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
   }
 }
 
-const handleCcsClientSelect = (clientType: CcSwitchClientType) => {
-  if (pendingCcsRow.value) {
-    executeCcsImport(pendingCcsRow.value, clientType)
-  }
-  showCcsClientSelect.value = false
-  pendingCcsRow.value = null
-}
-
-const closeCcsClientSelect = () => {
-  showCcsClientSelect.value = false
+const closeCcsImport = () => {
+  showCcsImport.value = false
   pendingCcsRow.value = null
 }
 

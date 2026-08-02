@@ -128,6 +128,7 @@ func GroupFromServiceShallow(g *service.Group) *Group {
 		return nil
 	}
 	out := groupFromServiceBase(g)
+	out.CCSwitchDefaults = g.ModelsListConfig.CCSwitchDefaults
 	return &out
 }
 

@@ -164,6 +164,7 @@ export default {
     profile: 'Profile',
     users: 'Users',
     groups: 'Groups',
+    ccSwitchDefaults: 'CCS Defaults',
     channels: 'Channels',
     availableChannels: 'Available Channels',
     modelPlaza: 'Model Plaza',
