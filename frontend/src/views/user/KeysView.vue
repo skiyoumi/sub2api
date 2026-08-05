@@ -1856,7 +1856,7 @@ const executeCcsImport = (selection: { app: CcSwitchApp; name: string; model: st
 
   const usageScript = `({
     request: {
-      url: "https://api.modelscube.com/v1/usage",
+      url: "${window.location.origin}/v1/usage",
       method: "GET",
       headers: { "Authorization": "Bearer {{apiKey}}" }
     },
