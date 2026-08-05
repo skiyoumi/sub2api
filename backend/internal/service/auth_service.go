@@ -19,34 +19,35 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 
-	"github.com/golang-jwt/jwt/v5"
 	entsql "entgo.io/ent/dialect/sql"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
 var (
 	ErrRegistrationHourlyIPLimit = infraerrors.Conflict("REGISTRATION_HOURLY_IP_LIMIT", "Registration limit reached")
-	ErrRegistrationDeviceLimit = infraerrors.Conflict("REGISTRATION_DEVICE_LIMIT", "Registration limit reached")
-	ErrInvalidCredentials      = infraerrors.Unauthorized("INVALID_CREDENTIALS", "invalid email or password")
-	ErrUserNotActive           = infraerrors.Forbidden("USER_NOT_ACTIVE", "user is not active")
-	ErrEmailExists             = infraerrors.Conflict("EMAIL_EXISTS", "email already exists")
-	ErrEmailReserved           = infraerrors.BadRequest("EMAIL_RESERVED", "email is reserved")
-	ErrInvalidToken            = infraerrors.Unauthorized("INVALID_TOKEN", "invalid token")
-	ErrTokenExpired            = infraerrors.Unauthorized("TOKEN_EXPIRED", "token has expired")
-	ErrAccessTokenExpired      = infraerrors.Unauthorized("ACCESS_TOKEN_EXPIRED", "access token has expired")
-	ErrTokenTooLarge           = infraerrors.BadRequest("TOKEN_TOO_LARGE", "token too large")
-	ErrTokenRevoked            = infraerrors.Unauthorized("TOKEN_REVOKED", "token has been revoked")
-	ErrRefreshTokenInvalid     = infraerrors.Unauthorized("REFRESH_TOKEN_INVALID", "invalid refresh token")
-	ErrRefreshTokenExpired     = infraerrors.Unauthorized("REFRESH_TOKEN_EXPIRED", "refresh token has expired")
-	ErrRefreshTokenReused      = infraerrors.Unauthorized("REFRESH_TOKEN_REUSED", "refresh token has been reused")
-	ErrEmailVerifyRequired     = infraerrors.BadRequest("EMAIL_VERIFY_REQUIRED", "email verification is required")
-	ErrEmailSuffixNotAllowed   = infraerrors.BadRequest("EMAIL_SUFFIX_NOT_ALLOWED", "email suffix is not allowed")
-	ErrRegDisabled             = infraerrors.Forbidden("REGISTRATION_DISABLED", "registration is currently disabled")
-	ErrServiceUnavailable      = infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "service temporarily unavailable")
-	ErrInvitationCodeRequired  = infraerrors.BadRequest("INVITATION_CODE_REQUIRED", "invitation code is required")
-	ErrInvitationCodeInvalid   = infraerrors.BadRequest("INVITATION_CODE_INVALID", "invalid or used invitation code")
-	ErrOAuthInvitationRequired = infraerrors.Forbidden("OAUTH_INVITATION_REQUIRED", "invitation code required to complete oauth registration")
-	ErrRegistrationIPLimit     = infraerrors.Conflict("REGISTRATION_IP_LIMIT", "this IP has reached the registration account limit")
+	ErrRegistrationDeviceLimit   = infraerrors.Conflict("REGISTRATION_DEVICE_LIMIT", "Registration limit reached")
+	ErrInvalidCredentials        = infraerrors.Unauthorized("INVALID_CREDENTIALS", "invalid email or password")
+	ErrUserNotActive             = infraerrors.Forbidden("USER_NOT_ACTIVE", "user is not active")
+	ErrEmailExists               = infraerrors.Conflict("EMAIL_EXISTS", "email already exists")
+	ErrEmailReserved             = infraerrors.BadRequest("EMAIL_RESERVED", "email is reserved")
+	ErrInvalidToken              = infraerrors.Unauthorized("INVALID_TOKEN", "invalid token")
+	ErrTokenExpired              = infraerrors.Unauthorized("TOKEN_EXPIRED", "token has expired")
+	ErrAccessTokenExpired        = infraerrors.Unauthorized("ACCESS_TOKEN_EXPIRED", "access token has expired")
+	ErrTokenTooLarge             = infraerrors.BadRequest("TOKEN_TOO_LARGE", "token too large")
+	ErrTokenRevoked              = infraerrors.Unauthorized("TOKEN_REVOKED", "token has been revoked")
+	ErrRefreshTokenInvalid       = infraerrors.Unauthorized("REFRESH_TOKEN_INVALID", "invalid refresh token")
+	ErrRefreshTokenExpired       = infraerrors.Unauthorized("REFRESH_TOKEN_EXPIRED", "refresh token has expired")
+	ErrRefreshTokenReused        = infraerrors.Unauthorized("REFRESH_TOKEN_REUSED", "refresh token has been reused")
+	ErrEmailVerifyRequired       = infraerrors.BadRequest("EMAIL_VERIFY_REQUIRED", "email verification is required")
+	ErrEmailSuffixNotAllowed     = infraerrors.BadRequest("EMAIL_SUFFIX_NOT_ALLOWED", "email suffix is not allowed")
+	ErrRegDisabled               = infraerrors.Forbidden("REGISTRATION_DISABLED", "registration is currently disabled")
+	ErrServiceUnavailable        = infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "service temporarily unavailable")
+	ErrInvitationCodeRequired    = infraerrors.BadRequest("INVITATION_CODE_REQUIRED", "invitation code is required")
+	ErrInvitationCodeInvalid     = infraerrors.BadRequest("INVITATION_CODE_INVALID", "invalid or used invitation code")
+	ErrOAuthInvitationRequired   = infraerrors.Forbidden("OAUTH_INVITATION_REQUIRED", "invitation code required to complete oauth registration")
+	ErrRegistrationIPLimit       = infraerrors.Conflict("REGISTRATION_IP_LIMIT", "this IP has reached the registration account limit")
+	ErrCaptchaProviderConflict   = infraerrors.ServiceUnavailable("CAPTCHA_PROVIDER_CONFLICT", "multiple captcha providers are enabled")
 )
 
 // maxTokenLength 限制 token 大小，避免超长 header 触发解析时的异常内存分配。
@@ -78,11 +79,20 @@ type AuthService struct {
 	settingService        *SettingService
 	emailService          *EmailService
 	turnstileService      *TurnstileService
+	tencentCaptchaService *TencentCaptchaService
+	aliyunCaptchaService  *AliyunCaptchaService
 	emailQueueService     *EmailQueueService
 	promoService          *PromoService
 	affiliateService      *AffiliateService
 	defaultSubAssigner    DefaultSubscriptionAssigner
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+}
+
+type CaptchaProof struct {
+	// TurnstileToken 承载 Cloudflare Turnstile token；阿里云验证码复用该字段承载 captchaVerifyParam
+	TurnstileToken string
+	TencentTicket  string
+	TencentRandstr string
 }
 
 type DefaultSubscriptionAssigner interface {
@@ -136,6 +146,14 @@ func (s *AuthService) EntClient() *dbent.Client {
 	return s.entClient
 }
 
+func (s *AuthService) SetTencentCaptchaService(tencentCaptchaService *TencentCaptchaService) {
+	s.tencentCaptchaService = tencentCaptchaService
+}
+
+func (s *AuthService) SetAliyunCaptchaService(aliyunCaptchaService *AliyunCaptchaService) {
+	s.aliyunCaptchaService = aliyunCaptchaService
+}
+
 // Register 用户注册，返回token和用户
 func (s *AuthService) Register(ctx context.Context, email, password string) (string, *User, error) {
 	return s.RegisterWithVerification(ctx, email, password, "", "", "", "")
@@ -150,34 +168,58 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	if deviceID := registrationDeviceID(ctx); deviceID != "" && s.entClient != nil {
 		var rows entsql.Rows
 		err := s.entClient.Driver().Query(ctx, "SELECT COUNT(*) FROM users WHERE registration_device_id = $1 AND deleted_at IS NULL", []any{deviceID}, &rows)
-		if err != nil { return "", nil, ErrServiceUnavailable }
+		if err != nil {
+			return "", nil, ErrServiceUnavailable
+		}
 		var count int
-		if rows.Next() { err = rows.Scan(&count) }
+		if rows.Next() {
+			err = rows.Scan(&count)
+		}
 		_ = rows.Close()
-		if err != nil { return "", nil, ErrServiceUnavailable }
-		if count >= 1 { return "", nil, ErrRegistrationDeviceLimit }
+		if err != nil {
+			return "", nil, ErrServiceUnavailable
+		}
+		if count >= 1 {
+			return "", nil, ErrRegistrationDeviceLimit
+		}
 	}
 	if clientIP := registrationIP(ctx); clientIP != "" && s.entClient != nil && !s.settingService.IsRegistrationIPWhitelisted(ctx, clientIP) {
 		var rows entsql.Rows
 		err := s.entClient.Driver().Query(ctx, "SELECT COUNT(*) FROM users WHERE registration_ip = $1 AND created_at >= NOW() - INTERVAL '1 hour' AND deleted_at IS NULL", []any{clientIP}, &rows)
-		if err != nil { return "", nil, ErrServiceUnavailable }
+		if err != nil {
+			return "", nil, ErrServiceUnavailable
+		}
 		var count int
-		if rows.Next() { err = rows.Scan(&count) }
+		if rows.Next() {
+			err = rows.Scan(&count)
+		}
 		_ = rows.Close()
-		if err != nil { return "", nil, ErrServiceUnavailable }
-		if count >= 2 { return "", nil, ErrRegistrationHourlyIPLimit }
+		if err != nil {
+			return "", nil, ErrServiceUnavailable
+		}
+		if count >= 2 {
+			return "", nil, ErrRegistrationHourlyIPLimit
+		}
 	}
 	if clientIP := registrationIP(ctx); clientIP != "" {
 		limit := s.settingService.RegistrationIPLimit(ctx)
 		if limit > 0 && !s.settingService.IsRegistrationIPWhitelisted(ctx, clientIP) && s.entClient != nil {
 			var rows entsql.Rows
 			err := s.entClient.Driver().Query(ctx, "SELECT COUNT(*) FROM users WHERE registration_ip = $1 AND deleted_at IS NULL", []any{clientIP}, &rows)
-			if err != nil { return "", nil, ErrServiceUnavailable }
+			if err != nil {
+				return "", nil, ErrServiceUnavailable
+			}
 			var count int
-			if rows.Next() { err = rows.Scan(&count) }
+			if rows.Next() {
+				err = rows.Scan(&count)
+			}
 			_ = rows.Close()
-			if err != nil { return "", nil, ErrServiceUnavailable }
-			if count >= limit { return "", nil, ErrRegistrationIPLimit }
+			if err != nil {
+				return "", nil, ErrServiceUnavailable
+			}
+			if count >= limit {
+				return "", nil, ErrRegistrationIPLimit
+			}
 		}
 	}
 	// 防止用户注册 LinuxDo OAuth 合成邮箱，避免第三方登录与本地账号发生碰撞。
@@ -423,47 +465,118 @@ func (s *AuthService) SendVerifyCodeAsync(ctx context.Context, email string, loc
 	}, nil
 }
 
-// VerifyTurnstileForRegister 在注册场景下验证 Turnstile。
-// 当邮箱验证开启且已提交验证码时，说明验证码发送阶段已完成 Turnstile 校验，
+// VerifyCaptchaForRegister 在注册场景下验证当前启用的验证码。
+// 当邮箱验证开启且已提交验证码时，说明验证码发送阶段已完成验证码校验，
 // 此处跳过二次校验，避免一次性 token 在注册提交时重复使用导致误报失败。
-func (s *AuthService) VerifyTurnstileForRegister(ctx context.Context, token, remoteIP, verifyCode string) error {
+func (s *AuthService) VerifyCaptchaForRegister(ctx context.Context, proof CaptchaProof, remoteIP, verifyCode string) error {
 	if s.IsEmailVerifyEnabled(ctx) && strings.TrimSpace(verifyCode) != "" {
-		logger.LegacyPrintf("service.auth", "%s", "[Auth] Email verify flow detected, skip duplicate Turnstile check on register")
+		logger.LegacyPrintf("service.auth", "%s", "[Auth] Email verify flow detected, skip duplicate captcha check on register")
 		return nil
 	}
-	return s.VerifyTurnstile(ctx, token, remoteIP)
+	return s.VerifyCaptcha(ctx, proof, remoteIP)
 }
 
-// VerifyTurnstile 验证Turnstile token
-func (s *AuthService) VerifyTurnstile(ctx context.Context, token string, remoteIP string) error {
+func (s *AuthService) VerifyCaptcha(ctx context.Context, proof CaptchaProof, remoteIP string) error {
 	required := s.cfg != nil && s.cfg.Server.Mode == "release" && s.cfg.Turnstile.Required
-
-	if required {
-		if s.settingService == nil {
-			logger.LegacyPrintf("service.auth", "%s", "[Auth] Turnstile required but settings service is not configured")
-			return ErrTurnstileNotConfigured
-		}
-		enabled := s.settingService.IsTurnstileEnabled(ctx)
-		secretConfigured := s.settingService.GetTurnstileSecretKey(ctx) != ""
-		if !enabled || !secretConfigured {
-			logger.LegacyPrintf("service.auth", "[Auth] Turnstile required but not configured (enabled=%v, secret_configured=%v)", enabled, secretConfigured)
-			return ErrTurnstileNotConfigured
-		}
-	}
-
-	if s.turnstileService == nil {
+	if s.settingService == nil {
 		if required {
-			logger.LegacyPrintf("service.auth", "%s", "[Auth] Turnstile required but service not configured")
 			return ErrTurnstileNotConfigured
 		}
-		return nil // 服务未配置则跳过验证
+		return nil
 	}
 
-	if !required && s.settingService != nil && s.settingService.IsTurnstileEnabled(ctx) && s.settingService.GetTurnstileSecretKey(ctx) == "" {
-		logger.LegacyPrintf("service.auth", "%s", "[Auth] Turnstile enabled but secret key not configured")
+	providerConfig, err := s.settingService.GetCaptchaProviderConfig(ctx)
+	if err != nil {
+		logger.LegacyPrintf("service.auth", "%s", "[Auth] Failed to read captcha provider settings")
+		return ErrServiceUnavailable
+	}
+	turnstileEnabled := providerConfig.TurnstileEnabled
+	tencentEnabled := providerConfig.Tencent.Enabled
+	aliyunEnabled := providerConfig.Aliyun.Enabled
+	if captchaProvidersConflict(turnstileEnabled, tencentEnabled, aliyunEnabled) {
+		return ErrCaptchaProviderConflict
+	}
+	if tencentEnabled {
+		if s.tencentCaptchaService == nil {
+			return ErrTencentCaptchaNotConfigured
+		}
+		return s.tencentCaptchaService.VerifyTicketWithConfig(ctx, providerConfig.Tencent, proof.TencentTicket, proof.TencentRandstr, remoteIP)
+	}
+	if aliyunEnabled {
+		if s.aliyunCaptchaService == nil {
+			return ErrAliyunCaptchaNotConfigured
+		}
+		return s.aliyunCaptchaService.VerifyParamWithConfig(ctx, providerConfig.Aliyun, proof.TurnstileToken)
+	}
+	if turnstileEnabled {
+		if s.turnstileService == nil || strings.TrimSpace(providerConfig.TurnstileSecretKey) == "" {
+			return ErrTurnstileNotConfigured
+		}
+		return s.turnstileService.VerifyTokenWithSecret(ctx, providerConfig.TurnstileSecretKey, proof.TurnstileToken, remoteIP)
+	}
+	if required {
+		return ErrTurnstileNotConfigured
+	}
+	return nil
+}
+
+// captchaProvidersConflict 同一时间仅允许启用一家人机验证服务商
+func captchaProvidersConflict(enabled ...bool) bool {
+	count := 0
+	for _, e := range enabled {
+		if e {
+			count++
+		}
+	}
+	return count > 1
+}
+
+// VerifyActionCaptchaIfEnabled 仅保护动作触发的扩展入口（OAuth 登录启动、passkey 登录），
+// 腾讯天御与阿里云验证码启用时拦截；不扩大 Cloudflare Turnstile 的既有覆盖范围。
+func (s *AuthService) VerifyActionCaptchaIfEnabled(ctx context.Context, proof CaptchaProof, remoteIP string) error {
+	if s == nil || s.settingService == nil {
+		return ErrServiceUnavailable
 	}
 
-	return s.turnstileService.VerifyToken(ctx, token, remoteIP)
+	providerConfig, err := s.settingService.GetCaptchaProviderConfig(ctx)
+	if err != nil {
+		logger.LegacyPrintf("service.auth", "%s", "[Auth] Failed to read captcha provider settings")
+		return ErrServiceUnavailable
+	}
+	tencentEnabled := providerConfig.Tencent.Enabled
+	aliyunEnabled := providerConfig.Aliyun.Enabled
+	if !tencentEnabled && !aliyunEnabled {
+		return nil
+	}
+	if captchaProvidersConflict(providerConfig.TurnstileEnabled, tencentEnabled, aliyunEnabled) {
+		return ErrCaptchaProviderConflict
+	}
+	if aliyunEnabled {
+		if s.aliyunCaptchaService == nil {
+			return ErrAliyunCaptchaNotConfigured
+		}
+		return s.aliyunCaptchaService.VerifyParamWithConfig(ctx, providerConfig.Aliyun, proof.TurnstileToken)
+	}
+	if s.tencentCaptchaService == nil {
+		return ErrTencentCaptchaNotConfigured
+	}
+	return s.tencentCaptchaService.VerifyTicketWithConfig(
+		ctx,
+		providerConfig.Tencent,
+		proof.TencentTicket,
+		proof.TencentRandstr,
+		remoteIP,
+	)
+}
+
+// VerifyTurnstileForRegister 保留旧内部接口，生产 handler 使用 VerifyCaptchaForRegister。
+func (s *AuthService) VerifyTurnstileForRegister(ctx context.Context, token, remoteIP, verifyCode string) error {
+	return s.VerifyCaptchaForRegister(ctx, CaptchaProof{TurnstileToken: token}, remoteIP, verifyCode)
+}
+
+// VerifyTurnstile 保留旧内部接口，生产 handler 使用 VerifyCaptcha。
+func (s *AuthService) VerifyTurnstile(ctx context.Context, token string, remoteIP string) error {
+	return s.VerifyCaptcha(ctx, CaptchaProof{TurnstileToken: token}, remoteIP)
 }
 
 // IsTurnstileEnabled 检查是否启用Turnstile验证
