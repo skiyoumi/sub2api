@@ -145,6 +145,23 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			return
 		}
 
+		// Model list/get are read-only metadata endpoints: they only need
+		// authentication, so keys with exhausted balance, expired keys, or
+		// quota-exhausted keys can still discover available models. This
+		// matches the main middleware behavior for /v1/usage.
+		if isModelsMetadataRead(c.Request.Method, c.Request.URL.Path) {
+			c.Set(string(ContextKeyAPIKey), apiKey)
+			c.Set(string(ContextKeyUser), AuthSubject{
+				UserID:      apiKey.User.ID,
+				Concurrency: apiKey.User.Concurrency,
+			})
+			c.Set(string(ContextKeyUserRole), apiKey.User.Role)
+			setGroupContext(c, apiKey.Group)
+			_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
+			c.Next()
+			return
+		}
+
 		// Key 状态检查（状态字段可能因后台异步刷新而滞后，故显式拦截）。
 		switch apiKey.Status {
 		case service.StatusAPIKeyQuotaExhausted:

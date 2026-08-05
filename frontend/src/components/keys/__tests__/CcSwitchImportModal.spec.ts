@@ -42,4 +42,30 @@ describe('CcSwitchImportModal', () => {
     await wrapper.findAll('button').at(-1)!.trigger('click')
     expect(wrapper.emitted('submit')?.[0]?.[0]).toMatchObject({ app: 'codex', model: 'gpt-5-mini' })
   })
+
+  it('names opencode imports modelscube', async () => {
+    const wrapper = mount(CcSwitchImportModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-test',
+        baseUrl: 'https://api.example.com/v1/',
+        providerName: 'Example - OpenAI',
+        platform: 'openai',
+        defaults: { codex: 'gpt-5-mini' },
+      },
+      global: { stubs: { BaseDialog: BaseDialogStub } },
+    })
+    await flushPromises()
+
+    const opencodeRadio = wrapper.findAll('input[type=radio]').find((el) => (el.element as HTMLInputElement).value === 'opencode')
+    expect(opencodeRadio).toBeDefined()
+    await opencodeRadio!.setValue()
+    await flushPromises()
+
+    const nameInput = wrapper.findAll('input').find((el) => (el.element as HTMLInputElement).type !== 'radio')
+    expect((nameInput!.element as HTMLInputElement).value).toBe('modelscube')
+
+    await wrapper.findAll('button').at(-1)!.trigger('click')
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toMatchObject({ app: 'opencode', name: 'modelscube' })
+  })
 })

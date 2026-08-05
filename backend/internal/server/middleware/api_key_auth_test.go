@@ -1499,6 +1499,83 @@ func TestAPIKeyAuthQuotaErrorKeepsLegacyFormatOutsideResponses(t *testing.T) {
 	requireAPIKeyAuthError(t, w, "API_KEY_QUOTA_EXHAUSTED", "API key 额度已用完")
 }
 
+func TestAPIKeyAuthModelsListSkipsBilling(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	group := &service.Group{
+		ID:               43,
+		Name:             `subscription`,
+		Status:           service.StatusActive,
+		Hydrated:         true,
+		SubscriptionType: service.SubscriptionTypeSubscription,
+	}
+	user := &service.User{
+		ID:          8,
+		Role:        service.RoleUser,
+		Status:      service.StatusActive,
+		Balance:     0,
+		Concurrency: 3,
+	}
+	expiredAt := time.Now().Add(-time.Hour)
+	apiKey := &service.APIKey{
+		ID:        101,
+		UserID:    user.ID,
+		Key:       `models-auth-only`,
+		Status:    service.StatusAPIKeyQuotaExhausted,
+		User:      user,
+		GroupID:   &group.ID,
+		Group:     group,
+		Quota:     1,
+		QuotaUsed: 1,
+		ExpiresAt: &expiredAt,
+	}
+
+	touchCalls := 0
+	subscriptionCalls := 0
+	apiKeyRepo := &stubApiKeyRepo{
+		getByKey: func(context.Context, string) (*service.APIKey, error) {
+			clone := *apiKey
+			return &clone, nil
+		},
+		updateLastUsed: func(context.Context, int64, time.Time) error {
+			touchCalls++
+			return nil
+		},
+	}
+	subscriptionRepo := &stubUserSubscriptionRepo{
+		getActive: func(context.Context, int64, int64) (*service.UserSubscription, error) {
+			subscriptionCalls++
+			return nil, service.ErrSubscriptionNotFound
+		},
+	}
+	cfg := &config.Config{RunMode: config.RunModeStandard}
+	apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
+	subscriptionService := service.NewSubscriptionService(nil, subscriptionRepo, nil, nil, cfg)
+	t.Cleanup(subscriptionService.Stop)
+	router := newAuthTestRouter(apiKeyService, subscriptionService, cfg)
+
+	for _, path := range []string{`/v1/models`, `/models`, `/backend-api/codex/models`} {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set(`x-api-key`, apiKey.Key)
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code, `path %s should skip billing`, path)
+	}
+	require.Zero(t, subscriptionCalls)
+	require.Equal(t, 3, touchCalls)
+}
+
+func TestIsModelsMetadataRead(t *testing.T) {
+	require.True(t, isModelsMetadataRead(http.MethodGet, `/v1/models`))
+	require.True(t, isModelsMetadataRead(http.MethodGet, `/models`))
+	require.True(t, isModelsMetadataRead(http.MethodGet, `/backend-api/codex/models`))
+	require.True(t, isModelsMetadataRead(http.MethodGet, `/v1beta/models`))
+	require.True(t, isModelsMetadataRead(http.MethodGet, `/v1beta/models/gemini-2.0-flash`))
+	require.False(t, isModelsMetadataRead(http.MethodPost, `/v1beta/models/gemini-2.0-flash:generateContent`))
+	require.False(t, isModelsMetadataRead(http.MethodGet, `/v1/chat/completions`))
+	require.False(t, isModelsMetadataRead(http.MethodGet, `/v1/usage`))
+}
+
 func newAuthTestRouter(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, subscriptionService, cfg)))
@@ -1510,6 +1587,9 @@ func newAuthTestRouter(apiKeyService *service.APIKeyService, subscriptionService
 	router.POST("/v1/messages", ok)
 	router.GET("/v1/usage", ok)
 	router.GET("/v1/sub2api/billing", ok)
+	router.GET("/v1/models", ok)
+	router.GET("/models", ok)
+	router.GET("/backend-api/codex/models", ok)
 	return router
 }
 

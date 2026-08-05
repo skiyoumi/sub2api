@@ -145,6 +145,11 @@ watch(() => props.show, (show) => {
 }, { immediate: true })
 
 watch(() => form.app, () => {
+  if (form.app === 'opencode') {
+    form.name = 'modelscube'
+  } else if (form.name === 'modelscube') {
+    form.name = props.providerName
+  }
   if (models.value.length) applyDefaults()
 })
 

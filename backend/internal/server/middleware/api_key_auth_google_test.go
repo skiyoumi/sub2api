@@ -686,6 +686,47 @@ func TestApiKeyAuthWithSubscriptionGoogle_RejectsExhaustedBalance(t *testing.T) 
 	require.Equal(t, "PERMISSION_DENIED", resp.Error.Status)
 }
 
+func TestApiKeyAuthWithSubscriptionGoogle_ModelsListSkipsBilling(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	apiKeyService := newTestAPIKeyService(fakeAPIKeyRepo{
+		getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+			return &service.APIKey{
+				ID:     1,
+				Key:    key,
+				Status: service.StatusActive,
+				User: &service.User{
+					ID:      123,
+					Status:  service.StatusActive,
+					Balance: 0,
+				},
+			}, nil
+		},
+	})
+	r.Use(APIKeyAuthWithSubscriptionGoogle(apiKeyService, nil, &config.Config{}))
+	r.GET(`/v1beta/models`, func(c *gin.Context) { c.JSON(200, gin.H{`ok`: true}) })
+	r.GET(`/v1beta/models/:model`, func(c *gin.Context) { c.JSON(200, gin.H{`ok`: true}) })
+	r.POST(`/v1beta/models/*modelAction`, func(c *gin.Context) { c.JSON(200, gin.H{`ok`: true}) })
+
+	for _, path := range []string{`/v1beta/models`, `/v1beta/models/gemini-2.0-flash`} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set(`Authorization`, `Bearer ok`)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code, `path %s should skip billing`, path)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, `/v1beta/models/gemini-2.0-flash:generateContent`, strings.NewReader(`{}`))
+	req.Header.Set(`Authorization`, `Bearer ok`)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	var resp googleErrorResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, `Insufficient account balance`, resp.Error.Message)
+}
+
 func TestApiKeyAuthWithSubscriptionGoogle_TouchesLastUsedOnSuccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

@@ -22,11 +22,14 @@ export function buildCcSwitchImportDeeplink(input: CcSwitchImportDeeplinkInput):
   const endpoint = input.app === 'claude'
     ? withoutV1Endpoint(endpointBaseUrl)
     : endpointBaseUrl.replace(/\/+$/, '')
+  // opencode imports are branded as 'modelscube'; other apps keep the
+  // provider name entered by the user.
+  const name = input.app === 'opencode' ? 'modelscube' : input.providerName
   const entries: [string, string][] = [
     ['resource', 'provider'],
     ['app', input.app],
     ['model', input.model],
-    ['name', input.providerName],
+    ['name', name],
     ['homepage', input.baseUrl],
     ['endpoint', endpoint],
     ['apiKey', input.apiKey],

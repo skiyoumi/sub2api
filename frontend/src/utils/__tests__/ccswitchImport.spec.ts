@@ -30,6 +30,16 @@ describe('ccswitchImport utils', () => {
     expect(atob(params.get('usageScript') || '')).toBe(baseInput.usageScript)
   })
 
+  it('uses modelscube as the import name for opencode', () => {
+    const params = paramsFromDeeplink(buildCcSwitchImportDeeplink({ ...baseInput, app: 'opencode' }))
+    expect(params.get('name')).toBe('modelscube')
+  })
+
+  it.each(['claude', 'codex', 'gemini'] as CcSwitchApp[])('keeps the provider name for %s imports', (app) => {
+    const params = paramsFromDeeplink(buildCcSwitchImportDeeplink({ ...baseInput, app }))
+    expect(params.get('name')).toBe(baseInput.providerName)
+  })
+
   it('adds Claude family model parameters only for Claude imports', () => {
     const params = paramsFromDeeplink(buildCcSwitchImportDeeplink({
       ...baseInput,
