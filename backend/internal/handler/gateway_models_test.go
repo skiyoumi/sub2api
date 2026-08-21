@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -100,6 +99,39 @@ func TestGatewayModels_GeminiGroupFallsBackToGeminiModels(t *testing.T) {
 	require.Equal(t, "list", got.Object)
 	require.Contains(t, modelIDsForTest(got.Data), "gemini-2.5-flash")
 	require.NotContains(t, modelIDsForTest(got.Data), "claude-sonnet-4-6")
+}
+
+func TestGatewayModels_DeepseekGroupFallsBackToDeepseekModels(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	groupID := int64(21)
+	h := newGatewayModelsHandlerForTest(
+		&gatewayModelsAccountRepoStub{
+			byGroup: map[int64][]service.Account{
+				groupID: {
+					{ID: 1, Platform: service.PlatformDeepseek},
+				},
+			},
+		},
+	)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		Group: &service.Group{ID: groupID, Platform: service.PlatformDeepseek},
+	})
+
+	h.Models(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got gatewayModelsResponseForTest
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	ids := modelIDsForTest(got.Data)
+	require.Contains(t, ids, "deepseek-v4-pro")
+	require.Contains(t, ids, "deepseek-chat")
+	require.NotContains(t, ids, "claude-sonnet-4-6")
 }
 
 func TestGatewayModels_Grok45AdvertisesReasoningEffortForGrokBuild(t *testing.T) {
@@ -407,9 +439,7 @@ func TestGatewayModels_CompositeUnmappedAccountsFallbackToLinkedPlatformsOnly(t 
 	require.NotContains(t, ids, "gemini-2.5-flash")
 }
 
-// CN 供应商没有静态默认模型列表：composite 下无映射的可调度 CN 账号不得把
-// defaultModelIDsForPlatform default 分支的 Claude 列表挂到 CN 平台名下。
-func TestGatewayModels_CompositeUnmappedCNAccountsContributeNoDefaults(t *testing.T) {
+func TestGatewayModels_CompositeUnmappedCNAccountsUseNativeDefaults(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	groupID := int64(35)
@@ -442,18 +472,27 @@ func TestGatewayModels_CompositeUnmappedCNAccountsContributeNoDefaults(t *testin
 
 	ids := modelIDsForTest(got.Data)
 	require.Contains(t, ids, "gpt-5.5")
+	require.Contains(t, ids, "kimi-k2.6")
+	require.Contains(t, ids, "glm-5.2")
+	require.Contains(t, ids, "deepseek-v4-pro")
 	require.NotContains(t, ids, "claude-sonnet-4-6")
 }
 
-// 独立 CN 分组沿用 default 分支的 Claude 默认列表（Claude Code 客户端请求的
-// 就是这些模型名并经账号 model_mapping 转换），composite 支持不得改变该回退。
-func TestDefaultModelIDsForPlatform_CNProvidersKeepClaudeDefaults(t *testing.T) {
-	want := make([]string, 0, len(claude.DefaultModels))
-	for _, model := range claude.DefaultModels {
-		want = append(want, model.ID)
+func TestDefaultModelIDsForPlatform_CNProvidersUseNativeDefaults(t *testing.T) {
+	tests := []struct {
+		platform string
+		models   []string
+	}{
+		{service.PlatformKimi, []string{"kimi-k3", "kimi-k2.6", "moonshot-v1-128k"}},
+		{service.PlatformZhipu, []string{"glm-5.2", "glm-4.7", "glm-4.5-air"}},
+		{service.PlatformDeepseek, []string{"deepseek-v4-pro", "deepseek-v4-flash", "deepseek-chat"}},
 	}
-	for _, platform := range []string{service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek} {
-		require.Equal(t, want, defaultModelIDsForPlatform(platform), "platform=%s", platform)
+	for _, tt := range tests {
+		got := defaultModelIDsForPlatform(tt.platform)
+		for _, model := range tt.models {
+			require.Contains(t, got, model, "platform=%s", tt.platform)
+		}
+		require.NotContains(t, got, "claude-sonnet-4-6", "platform=%s", tt.platform)
 	}
 }
 

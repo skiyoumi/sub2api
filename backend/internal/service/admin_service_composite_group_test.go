@@ -6,7 +6,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/stretchr/testify/require"
 )
 
@@ -197,18 +196,58 @@ func TestAdminService_CompositeModelsListCandidatesIncludeConcreteAccountMapping
 	require.Contains(t, candidates, "gpt-custom")
 	require.Contains(t, candidates, "gemini-custom")
 	require.Contains(t, candidates, "kimi-custom")
-	require.Contains(t, candidates, "gpt-5.5")
-	require.Contains(t, candidates, "gemini-2.5-flash")
+	require.NotContains(t, candidates, "gpt-5.5")
+	require.NotContains(t, candidates, "gemini-2.5-flash")
 }
 
-// 独立 CN 分组的模型列表候选沿用 default 分支的 Claude 默认列表；
-// composite 支持不得改变独立分组的候选语义。
-func TestAdminService_CNProviderModelsListCandidatesKeepClaudeDefaults(t *testing.T) {
-	want := make([]string, 0, len(claude.DefaultModels))
-	for _, model := range claude.DefaultModels {
-		want = append(want, model.ID)
+func TestAdminService_ModelsListCandidatesPreferCustomModelsList(t *testing.T) {
+	accountRepo := &accountRepoStubForCompositeModelsList{
+		accounts: []Account{
+			{
+				ID:       1,
+				Platform: PlatformDeepseek,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{"mapped-deepseek": "deepseek-v4-pro"},
+				},
+			},
+		},
 	}
-	for _, platform := range []string{PlatformKimi, PlatformZhipu, PlatformDeepseek} {
-		require.Equal(t, want, defaultModelsListCandidateIDs(platform), "platform=%s", platform)
+	groupRepo := &groupRepoStubForAdmin{
+		getByIDByID: map[int64]*Group{
+			42: {
+				ID:       42,
+				Platform: PlatformDeepseek,
+				ModelsListConfig: GroupModelsListConfig{
+					Enabled: true,
+					Models:  []string{" deepseek-custom ", "deepseek-custom", "deepseek-alt"},
+				},
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: accountRepo, groupRepo: groupRepo}
+
+	candidates, err := svc.GetGroupModelsListCandidates(context.Background(), 42, "")
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"deepseek-custom", "deepseek-alt"}, candidates)
+	require.NotContains(t, candidates, "mapped-deepseek")
+	require.NotContains(t, candidates, "deepseek-v4-pro")
+}
+
+func TestAdminService_CNProviderModelsListCandidatesUseNativeDefaults(t *testing.T) {
+	tests := []struct {
+		platform string
+		models   []string
+	}{
+		{PlatformKimi, []string{"kimi-k3", "kimi-k2.6", "moonshot-v1-128k"}},
+		{PlatformZhipu, []string{"glm-5.2", "glm-4.7", "glm-4.5-air"}},
+		{PlatformDeepseek, []string{"deepseek-v4-pro", "deepseek-v4-flash", "deepseek-chat"}},
+	}
+	for _, tt := range tests {
+		got := defaultModelsListCandidateIDs(tt.platform)
+		for _, model := range tt.models {
+			require.Contains(t, got, model, "platform=%s", tt.platform)
+		}
+		require.NotContains(t, got, "claude-sonnet-4-6", "platform=%s", tt.platform)
 	}
 }

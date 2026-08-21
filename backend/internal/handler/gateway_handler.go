@@ -1133,6 +1133,10 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		writeGrokModelsList(c, xai.DefaultModelIDs())
 		return
 	}
+	if platform == service.PlatformAntigravity || service.IsCNProvider(platform) {
+		writeModelsList(c, platform, defaultModelIDsForPlatform(platform))
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"object": "list",
@@ -1150,9 +1154,7 @@ func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *
 	for _, platform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek} {
 		platformModels := h.gatewayService.GetAvailableModels(ctx, groupID, platform)
 		if len(platformModels) == 0 {
-			// CN 供应商没有静态默认模型列表（defaultModelIDsForPlatform 的
-			// default 分支是 Claude 列表），composite 下只暴露账号映射键。
-			if _, ok := schedulablePlatforms[platform]; ok && !service.IsCNProvider(platform) {
+			if _, ok := schedulablePlatforms[platform]; ok {
 				platformModels = defaultModelIDsForPlatform(platform)
 			}
 		}
@@ -1371,6 +1373,8 @@ func defaultModelIDsForPlatform(platform string) []string {
 		return mergeModelIDs(ids, nil)
 	case service.PlatformGrok:
 		return xai.DefaultModelIDs()
+	case service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek:
+		return service.CNProviderDefaultModelIDs(platform)
 	case service.PlatformComposite:
 		ids := make([]string, 0)
 		seen := make(map[string]struct{})

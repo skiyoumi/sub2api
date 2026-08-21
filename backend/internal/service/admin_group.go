@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -50,8 +51,10 @@ func (s *adminServiceImpl) GetGroup(ctx context.Context, id int64) (*Group, erro
 
 func (s *adminServiceImpl) GetGroupModelsListCandidates(ctx context.Context, id int64, platform string) ([]string, error) {
 	platform = strings.TrimSpace(platform)
+	var group *Group
 	if id > 0 {
-		group, err := s.groupRepo.GetByIDLite(ctx, id)
+		var err error
+		group, err = s.groupRepo.GetByIDLite(ctx, id)
 		if err != nil {
 			return nil, err
 		}
@@ -63,9 +66,12 @@ func (s *adminServiceImpl) GetGroupModelsListCandidates(ctx context.Context, id 
 		platform = PlatformAnthropic
 	}
 
-	candidates := defaultModelsListCandidateIDs(platform)
+	if group != nil && group.CustomModelsListEnabled() {
+		return uniqueTrimmedModelIDs(group.ModelsListConfig.Models, false), nil
+	}
+
 	if id <= 0 || s.accountRepo == nil {
-		return candidates, nil
+		return defaultModelsListCandidateIDs(platform), nil
 	}
 
 	accounts, err := s.accountRepo.ListSchedulableByGroupID(ctx, id)
@@ -73,10 +79,8 @@ func (s *adminServiceImpl) GetGroupModelsListCandidates(ctx context.Context, id 
 		return nil, err
 	}
 
-	seen := make(map[string]struct{}, len(candidates))
-	for _, model := range candidates {
-		seen[model] = struct{}{}
-	}
+	seen := make(map[string]struct{}, len(accounts))
+	candidates := make([]string, 0)
 	for _, acc := range accounts {
 		if platform == PlatformComposite {
 			if !isConcreteRequestPlatform(acc.Platform) {
@@ -97,7 +101,31 @@ func (s *adminServiceImpl) GetGroupModelsListCandidates(ctx context.Context, id 
 			candidates = append(candidates, model)
 		}
 	}
-	return candidates, nil
+	if len(candidates) > 0 {
+		sort.Strings(candidates)
+		return candidates, nil
+	}
+	return defaultModelsListCandidateIDs(platform), nil
+}
+
+func uniqueTrimmedModelIDs(models []string, sortResult bool) []string {
+	seen := make(map[string]struct{}, len(models))
+	out := make([]string, 0, len(models))
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			continue
+		}
+		if _, ok := seen[model]; ok {
+			continue
+		}
+		seen[model] = struct{}{}
+		out = append(out, model)
+	}
+	if sortResult {
+		sort.Strings(out)
+	}
+	return out
 }
 
 func (s *adminServiceImpl) ListCompositeRoutes(ctx context.Context, groupID int64) ([]CompositeModelRoute, error) {
@@ -247,6 +275,8 @@ func defaultModelsListCandidateIDs(platform string) []string {
 		return ids
 	case PlatformGrok:
 		return xai.DefaultModelIDs()
+	case PlatformKimi, PlatformZhipu, PlatformDeepseek:
+		return CNProviderDefaultModelIDs(platform)
 	case PlatformComposite:
 		return compositeDefaultModelsListCandidateIDs()
 	default:
