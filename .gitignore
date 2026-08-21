@@ -144,6 +144,7 @@ frontend/coverage/
 aicodex
 output/
 /deploy/sub2api.tar.gz
+.codegraph/
 
 # Vitest / Vite cache at repo root
 .vite/
