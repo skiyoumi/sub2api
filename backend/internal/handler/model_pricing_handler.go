@@ -22,7 +22,7 @@ func (h *ModelPlazaHandler) GetPricing(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	groups, err := h.channelService.ListPlazaGroups(c.Request.Context())
+	groups, err := h.plazaService.ListGroups(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -55,7 +55,7 @@ func (h *ModelPlazaHandler) GetPricingConfig(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	groups, err := h.channelService.ListPlazaGroups(c.Request.Context())
+	groups, err := h.plazaService.ListGroups(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -77,7 +77,7 @@ func (h *ModelPlazaHandler) UpdatePricingConfig(c *gin.Context) {
 		response.BadRequest(c, "Description must not exceed 4000 characters")
 		return
 	}
-	available, err := h.channelService.ListPlazaGroups(c.Request.Context())
+	available, err := h.plazaService.ListGroups(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
