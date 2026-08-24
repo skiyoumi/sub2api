@@ -8,6 +8,7 @@ import audit from './audit'
 import promptAudit from './promptAudit'
 import modelPricing from './modelPricing'
 import ccSwitchDefaults from './ccSwitchDefaults'
+import plugins from './plugins'
 
 export default {
   ...overview,
@@ -20,4 +21,5 @@ export default {
   ...promptAudit,
   ...modelPricing,
   ...ccSwitchDefaults,
+  ...plugins,
 }
