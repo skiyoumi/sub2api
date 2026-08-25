@@ -78,6 +78,7 @@ export default {
       speedTest: '测速',
     },
     allGroups: '全部分组',
+    allPlatforms: '全部平台',
     allStatus: '全部状态',
     columnSettings: '列设置',
     columnAlwaysVisible: '该列固定显示，不可隐藏',

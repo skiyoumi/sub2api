@@ -78,6 +78,7 @@ export default {
       speedTest: 'Speed Test',
     },
     allGroups: 'All Groups',
+    allPlatforms: 'All platforms',
     allStatus: 'All Status',
     columnSettings: 'Column Settings',
     columnAlwaysVisible: 'This column is always visible',

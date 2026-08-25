@@ -59,6 +59,8 @@
           @mousedown.stop
           @keydown="onDropdownKeyDown"
         >
+          <!-- Custom content rendered at the top of the dropdown (e.g. platform tabs) -->
+          <slot name="dropdown-header" />
           <!-- Search input -->
           <div v-if="isSearchable" class="select-search">
             <Icon name="search" size="sm" class="text-gray-400" />
@@ -289,16 +291,32 @@ const hasValue = computed(
 
 const filteredOptions = computed(() => {
   let opts = props.options as any[]
-  // 远程搜索模式不在本地过滤（选项即服务端搜索结果的一页）。
+  // Remote search mode skips local filtering (options are the server's page of results).
   if (isSearchable.value && searchQuery.value && !props.remote) {
     const query = searchQuery.value.toLowerCase()
-    opts = opts.filter((opt) => {
-      // Match label
-      if (getOptionLabel(opt).toLowerCase().includes(query)) return true
-      // Also match description if present
-      if (opt.description && String(opt.description).toLowerCase().includes(query)) return true
-      return false
-    })
+    const matchesQuery = (opt: any) =>
+      getOptionLabel(opt).toLowerCase().includes(query) ||
+      (opt.description && String(opt.description).toLowerCase().includes(query))
+
+    // Keep group-header rows only when at least one option below them matches,
+    // so searching preserves section grouping without leaking empty headers
+    // (e.g. a header whose own label matches but none of its items do).
+    const filtered: any[] = []
+    let pendingGroupHeader: any = null
+    for (const opt of opts) {
+      if (isGroupHeaderOption(opt)) {
+        pendingGroupHeader = opt
+        continue
+      }
+      if (!matchesQuery(opt)) continue
+      if (pendingGroupHeader) {
+        filtered.push(pendingGroupHeader)
+        pendingGroupHeader = null
+      }
+      filtered.push(opt)
+    }
+    opts = filtered
+
     // In creatable mode, always prepend a fuzzy search option
     if (props.creatable && searchQuery.value.trim()) {
       const trimmed = searchQuery.value.trim()
@@ -424,6 +442,13 @@ const clearSelection = () => {
   emit('update:modelValue', null)
   emit('change', null, null)
 }
+
+const clearSearch = () => {
+  searchQuery.value = ''
+  focusedIndex.value = -1
+}
+
+defineExpose({ clearSearch })
 
 // Keyboards
 const onTriggerKeyDown = () => {

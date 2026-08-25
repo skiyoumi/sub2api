@@ -73,7 +73,7 @@
               </button>
             </div>
           </div>
-          <button @click="showCreateModal = true" class="btn btn-primary" data-tour="keys-create-btn">
+          <button @click="openCreateModal" class="btn btn-primary" data-tour="keys-create-btn">
             <Icon name="plus" size="md" class="mr-2" />
             {{ t('keys.createKey') }}
           </button>
@@ -467,13 +467,43 @@
         <div>
           <label class="input-label">{{ t('keys.groupLabel') }}</label>
           <Select
+            ref="groupSelectRef"
             v-model="formData.group_id"
-            :options="groupOptions"
+            :options="createGroupOptions"
             :placeholder="t('keys.selectGroup')"
             :searchable="true"
             :search-placeholder="t('keys.searchGroup')"
             data-tour="key-form-group"
           >
+            <template #dropdown-header>
+              <!-- Platform switch inside the dropdown popup: horizontal tabs filter the group list by platform -->
+              <div
+                v-if="availableGroupPlatforms.length > 1"
+                class="tabs flex-wrap border-b border-gray-100 dark:border-dark-700"
+                role="group"
+                :aria-label="t('keys.selectGroup')"
+              >
+                <button
+                  type="button"
+                  class="tab"
+                  :class="selectedCreatePlatform === 'all' ? 'tab-active' : ''"
+                  @click="switchCreatePlatform('all')"
+                >
+                  {{ t('keys.allPlatforms') }}
+                </button>
+                <button
+                  v-for="platform in availableGroupPlatforms"
+                  :key="platform"
+                  type="button"
+                  class="tab flex items-center gap-1.5"
+                  :class="selectedCreatePlatform === platform ? 'tab-active' : ''"
+                  @click="switchCreatePlatform(platform)"
+                >
+                  <PlatformIcon :platform="platform" size="xs" />
+                  {{ getPlatformLabel(platform) }}
+                </button>
+              </div>
+            </template>
             <template #selected="{ option }">
               <GroupBadge
                 v-if="option"
@@ -491,6 +521,7 @@
             </template>
             <template #option="{ option, selected }">
               <GroupOptionItem
+                v-if="(option as unknown as GroupOption).kind !== 'group'"
                 :name="(option as unknown as GroupOption).label"
                 :platform="(option as unknown as GroupOption).platform"
                 :subscription-type="(option as unknown as GroupOption).subscriptionType"
@@ -503,6 +534,13 @@
                 :description="(option as unknown as GroupOption).description"
                 :selected="selected"
               />
+              <div
+                v-else
+                class="flex w-full items-center gap-2"
+              >
+                <PlatformIcon :platform="(option as unknown as GroupOption).platform" size="xs" />
+                <span>{{ (option as unknown as GroupOption).label }}</span>
+              </div>
             </template>
           </Select>
         </div>
@@ -1022,6 +1060,33 @@
           left: dropdownPosition.left + 'px'
         }"
       >
+        <!-- Platform switch: horizontal tabs at the top filter the group list by platform -->
+        <div
+          v-if="availableGroupPlatforms.length > 1"
+          class="tabs flex-wrap border-b border-gray-100 p-1 dark:border-dark-700"
+          role="group"
+          :aria-label="t('keys.selectGroup')"
+        >
+          <button
+            type="button"
+            class="tab"
+            :class="selectedGroupSwitchPlatform === 'all' ? 'tab-active' : ''"
+            @click="switchGroupSwitchPlatform('all')"
+          >
+            {{ t('keys.allPlatforms') }}
+          </button>
+          <button
+            v-for="platform in availableGroupPlatforms"
+            :key="platform"
+            type="button"
+            class="tab flex items-center gap-1.5"
+            :class="selectedGroupSwitchPlatform === platform ? 'tab-active' : ''"
+            @click="switchGroupSwitchPlatform(platform)"
+          >
+            <PlatformIcon :platform="platform" size="xs" />
+            {{ getPlatformLabel(platform) }}
+          </button>
+        </div>
         <!-- Search box -->
         <div class="border-b border-gray-100 p-2 dark:border-dark-700">
           <div class="relative">
@@ -1039,39 +1104,50 @@
         </div>
         <!-- Group list -->
         <div class="max-h-80 overflow-y-auto p-1.5">
-          <button
-            v-for="option in filteredGroupOptions"
-            :key="option.value ?? 'null'"
-            @click="changeGroup(selectedKeyForGroup!, option.value)"
-            :class="[
-              'flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors',
-              'border-b border-gray-100 last:border-0 dark:border-dark-700',
-              selectedKeyForGroup?.group_id === option.value ||
-              (!selectedKeyForGroup?.group_id && option.value === null)
-                ? 'bg-primary-50 dark:bg-primary-900/20'
-                : 'hover:bg-gray-100 dark:hover:bg-dark-700'
-            ]"
-            :title="option.description || undefined"
+          <template
+            v-for="option in groupSwitchOptions"
+            :key="option.value ?? option.label"
           >
-            <GroupOptionItem
-              :name="option.label"
-              :platform="option.platform"
-              :subscription-type="option.subscriptionType"
-              :rate-multiplier="option.rate"
-              :user-rate-multiplier="option.userRate"
-              :peak-rate-enabled="option.peakRateEnabled"
-              :peak-start="option.peakStart"
-              :peak-end="option.peakEnd"
-              :peak-rate-multiplier="option.peakRateMultiplier"
-              :description="option.description"
-              :selected="
+            <div
+              v-if="option.kind === 'group'"
+              class="flex items-center gap-2 px-3 pb-1 pt-3 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400"
+            >
+              <PlatformIcon :platform="option.platform" size="xs" />
+              <span>{{ option.label }}</span>
+            </div>
+            <button
+              v-else
+              @click="changeGroup(selectedKeyForGroup!, option.value)"
+              :class="[
+                'flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors',
+                'border-b border-gray-100 last:border-0 dark:border-dark-700',
                 selectedKeyForGroup?.group_id === option.value ||
                 (!selectedKeyForGroup?.group_id && option.value === null)
-              "
-            />
-          </button>
+                  ? 'bg-primary-50 dark:bg-primary-900/20'
+                  : 'hover:bg-gray-100 dark:hover:bg-dark-700'
+              ]"
+              :title="option.description || undefined"
+            >
+              <GroupOptionItem
+                :name="option.label"
+                :platform="option.platform"
+                :subscription-type="option.subscriptionType"
+                :rate-multiplier="option.rate"
+                :user-rate-multiplier="option.userRate"
+                :peak-rate-enabled="option.peakRateEnabled"
+                :peak-start="option.peakStart"
+                :peak-end="option.peakEnd"
+                :peak-rate-multiplier="option.peakRateMultiplier"
+                :description="option.description"
+                :selected="
+                  selectedKeyForGroup?.group_id === option.value ||
+                  (!selectedKeyForGroup?.group_id && option.value === null)
+                "
+              />
+            </button>
+          </template>
           <!-- Empty state when search has no results -->
-          <div v-if="filteredGroupOptions.length === 0" class="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
+          <div v-if="groupSwitchOptions.length === 0" class="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
             {{ t('keys.noGroupFound') }}
           </div>
         </div>
@@ -1105,7 +1181,9 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
+	import PlatformIcon from '@/components/common/PlatformIcon.vue'
 	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
+import { GROUP_PLATFORM_OPTIONS } from '@/constants/platforms'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
 import { formatDateTime } from '@/utils/format'
@@ -1123,8 +1201,8 @@ const formatDateTimeLocal = (isoDate: string): string => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-interface GroupOption {
-  value: number
+type GroupOption = {
+  value: number | null
   label: string
   description: string | null
   rate: number
@@ -1135,6 +1213,9 @@ interface GroupOption {
   peakRateMultiplier: number
   subscriptionType: SubscriptionType
   platform: GroupPlatform
+  /** Platform section header row rendered by Select.vue when present. */
+  kind?: 'group'
+  disabled?: boolean
 }
 
 const appStore = useAppStore()
@@ -1379,33 +1460,153 @@ const onStatusFilterChange = (value: string | number | boolean | null) => {
   onFilterChange()
 }
 
-// Convert groups to Select options format with rate multiplier and subscription type
-const groupOptions = computed(() =>
-  groups.value.map((group) => ({
-    value: group.id,
-    label: group.name,
-    description: group.description,
-    rate: group.rate_multiplier,
-    userRate: userGroupRates.value[group.id] ?? null,
-    peakRateEnabled: group.peak_rate_enabled,
-    peakStart: group.peak_start,
-    peakEnd: group.peak_end,
-    peakRateMultiplier: group.peak_rate_multiplier,
-    subscriptionType: group.subscription_type,
-    platform: group.platform
-  }))
+// Convert groups to Select options grouped by platform. Each platform section is
+// preceded by a disabled header row (kind: 'group') so the dropdown reads as a
+// categorized list; negative sentinel values keep header keys distinct from real
+// group ids (mirrors the admin apiKeyGroupFilterOptions pattern).
+const groupOptions = computed<GroupOption[]>(() => {
+  const byPlatform = new Map<GroupPlatform, GroupOption[]>()
+  for (const group of groups.value) {
+    const option: GroupOption = {
+      value: group.id,
+      label: group.name,
+      description: group.description,
+      rate: group.rate_multiplier,
+      userRate: userGroupRates.value[group.id] ?? null,
+      peakRateEnabled: group.peak_rate_enabled,
+      peakStart: group.peak_start,
+      peakEnd: group.peak_end,
+      peakRateMultiplier: group.peak_rate_multiplier,
+      subscriptionType: group.subscription_type,
+      platform: group.platform
+    }
+    const bucket = byPlatform.get(group.platform)
+    if (bucket) bucket.push(option)
+    else byPlatform.set(group.platform, [option])
+  }
+
+  const result: GroupOption[] = []
+  let headerSeq = -1
+  const pushHeader = (platform: GroupPlatform, label: string) => {
+    result.push({
+      value: headerSeq--,
+      label,
+      description: null,
+      rate: 0,
+      userRate: null,
+      peakRateEnabled: false,
+      peakStart: '',
+      peakEnd: '',
+      peakRateMultiplier: 1,
+      subscriptionType: 'standard',
+      platform,
+      kind: 'group',
+      disabled: true
+    })
+  }
+
+  for (const platformOption of GROUP_PLATFORM_OPTIONS) {
+    const items = byPlatform.get(platformOption.value)
+    if (!items || items.length === 0) continue
+    pushHeader(platformOption.value, platformOption.label)
+    result.push(...items)
+    byPlatform.delete(platformOption.value)
+  }
+  // Defensive: platforms missing from the catalog (e.g. newly added) render last.
+  for (const [platform, items] of byPlatform) {
+    if (items.length === 0) continue
+    pushHeader(platform, platform)
+    result.push(...items)
+  }
+  return result
+})
+
+// Group dropdown search: keep platform headers only when a matching group sits below them.
+const groupSearchQuery = ref('')
+const filterGroupOptionsByQuery = (options: GroupOption[]): GroupOption[] => {
+  const query = groupSearchQuery.value.trim().toLowerCase()
+  if (!query) return options
+  const result: GroupOption[] = []
+  let pendingHeader: GroupOption | null = null
+  for (const option of options) {
+    if (option.kind === 'group') {
+      pendingHeader = option
+      continue
+    }
+    const matches =
+      option.label.toLowerCase().includes(query) ||
+      (option.description != null && option.description.toLowerCase().includes(query))
+    if (!matches) continue
+    if (pendingHeader) {
+      result.push(pendingHeader)
+      pendingHeader = null
+    }
+    result.push(option)
+  }
+  return result
+}
+
+// Platform switch shared by the create/edit modal Select and the inline group
+// selector: horizontal tabs at the top narrow the group list to one platform
+// ('all' keeps the grouped-by-platform header view).
+const groupSelectRef = ref<InstanceType<typeof Select> | null>(null)
+const selectedCreatePlatform = ref<'all' | GroupPlatform>('all')
+const selectedGroupSwitchPlatform = ref<'all' | GroupPlatform>('all')
+
+const availableGroupPlatforms = computed<GroupPlatform[]>(() => {
+  const seen = new Set<GroupPlatform>()
+  const result: GroupPlatform[] = []
+  for (const platformOption of GROUP_PLATFORM_OPTIONS) {
+    if (groups.value.some((group) => group.platform === platformOption.value)) {
+      seen.add(platformOption.value)
+      result.push(platformOption.value)
+    }
+  }
+  // Defensive: platforms missing from the catalog render last.
+  for (const group of groups.value) {
+    if (group.platform && !seen.has(group.platform)) {
+      seen.add(group.platform)
+      result.push(group.platform)
+    }
+  }
+  return result
+})
+
+const getPlatformLabel = (platform: GroupPlatform): string =>
+  GROUP_PLATFORM_OPTIONS.find((option) => option.value === platform)?.label ?? platform
+
+const filterByPlatform = (platform: 'all' | GroupPlatform): GroupOption[] => {
+  if (platform === 'all') return groupOptions.value
+  return groupOptions.value.filter(
+    (option) => option.kind !== 'group' && option.platform === platform
+  )
+}
+
+const createGroupOptions = computed<GroupOption[]>(() => filterByPlatform(selectedCreatePlatform.value))
+
+const groupSwitchOptions = computed<GroupOption[]>(() =>
+  filterGroupOptionsByQuery(filterByPlatform(selectedGroupSwitchPlatform.value))
 )
 
-// Group dropdown search
-const groupSearchQuery = ref('')
-const filteredGroupOptions = computed(() => {
-  const query = groupSearchQuery.value.trim().toLowerCase()
-  if (!query) return groupOptions.value
-  return groupOptions.value.filter((opt) => {
-    return opt.label.toLowerCase().includes(query) ||
-      (opt.description && opt.description.toLowerCase().includes(query))
-  })
-})
+const switchCreatePlatform = (platform: 'all' | GroupPlatform) => {
+  selectedCreatePlatform.value = platform
+  // Reset the in-dropdown search so the newly selected platform's full list is visible.
+  groupSelectRef.value?.clearSearch()
+  // If the currently selected group belongs to another platform, clear it so the
+  // dropdown does not silently keep a stale selection outside the active tab.
+  if (platform !== 'all') {
+    const currentGroup = groups.value.find((group) => group.id === formData.value.group_id)
+    if (currentGroup && currentGroup.platform !== platform) {
+      formData.value.group_id = null
+    }
+  }
+}
+
+const switchGroupSwitchPlatform = (platform: 'all' | GroupPlatform) => {
+  selectedGroupSwitchPlatform.value = platform
+  // Reset the in-dropdown search so the newly selected platform's full list is visible.
+  groupSearchQuery.value = ''
+}
 
 const copyToClipboard = async (text: string, keyId: number) => {
   const success = await clipboardCopy(text, t('keys.copied'))
@@ -1529,7 +1730,13 @@ const handleSort = (key: string, order: 'asc' | 'desc') => {
   loadApiKeys()
 }
 
+const openCreateModal = () => {
+  selectedCreatePlatform.value = 'all'
+  showCreateModal.value = true
+}
+
 const editKey = (key: ApiKey) => {
+  selectedCreatePlatform.value = key.group?.platform ?? 'all'
   selectedKey.value = key
   const hasIPRestriction = (key.ip_whitelist?.length > 0) || (key.ip_blacklist?.length > 0)
   const hasExpiration = !!key.expires_at
@@ -1598,6 +1805,7 @@ const openGroupSelector = (key: ApiKey) => {
       }
     }
     groupSelectorKeyId.value = key.id
+    selectedGroupSwitchPlatform.value = 'all'
     groupSearchQuery.value = ''
   }
 }
@@ -1756,6 +1964,7 @@ const handleDelete = async () => {
 }
 
 const closeModals = () => {
+  selectedCreatePlatform.value = 'all'
   showCreateModal.value = false
   showEditModal.value = false
   selectedKey.value = null
