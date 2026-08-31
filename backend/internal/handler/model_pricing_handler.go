@@ -32,7 +32,7 @@ func (h *ModelPlazaHandler) GetPricing(c *gin.Context) {
 		response.Unauthorized(c, "Authentication required")
 		return
 	}
-	allowedExclusive, err := h.apiKeyService.GetUserAllowedGroupIDSet(c.Request.Context(), subject.UserID)
+	allowedGroups, restrictPublicGroups, err := h.apiKeyService.GetUserGroupVisibility(c.Request.Context(), subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -40,7 +40,7 @@ func (h *ModelPlazaHandler) GetPricing(c *gin.Context) {
 	userRates, _ := h.apiKeyService.GetUserGroupRates(c.Request.Context(), subject.UserID)
 	selected := []service.PlazaGroup{}
 	if config.Enabled {
-		selected = selectPricingGroups(filterPlazaVisibleGroups(groups, allowedExclusive), config.Groups)
+		selected = selectPricingGroups(filterPlazaVisibleGroups(groups, allowedGroups, restrictPublicGroups), config.Groups)
 	}
 	out := make([]modelPlazaGroup, 0, len(selected))
 	for i := range selected {
