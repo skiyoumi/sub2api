@@ -123,7 +123,6 @@
                   </div>
                 </section>
                 </div>
-
                 <aside class="space-y-5 lg:sticky lg:top-20">
                 <section class="recharge-summary-panel">
                   <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('payment.actualPay') }}</p>
@@ -141,6 +140,9 @@
                       <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
                       <span class="font-semibold text-emerald-600 dark:text-emerald-400">${{ creditedAmount.toFixed(2) }}</span>
                     </div>
+                    <p v-if="balanceRechargeMultiplier !== 1" class="border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400">
+                      {{ t('payment.rechargeRatePreview', { currency: selectedCurrency, usd: balanceRechargeMultiplier.toFixed(2) }) }}
+                    </p>
                   </div>
                   <button :class="['btn mt-6 hidden w-full py-3 text-base font-semibold lg:flex', paymentButtonClass]" :disabled="!canSubmit || submitting" @click="handleSubmitRecharge">
                     <span v-if="submitting" class="flex items-center justify-center gap-2">
