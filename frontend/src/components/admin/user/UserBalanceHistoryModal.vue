@@ -315,7 +315,7 @@ const getItemTitle = (item: BalanceHistoryItem) => {
     case 'balance':
       return t('redeem.balanceAddedRedeem')
     case 'package_balance':
-      return t('dashboard.balanceAddedPackage')
+      return t('redeem.balanceAddedPackage')
     case 'affiliate_balance':
       return t('redeem.balanceAddedAffiliate')
     case 'admin_balance':

@@ -222,7 +222,7 @@ func TestAdminService_ModelsListCandidatesPreferCustomModelsList(t *testing.T) {
 			42: {
 				ID:       42,
 				Platform: PlatformDeepseek,
-				ModelsListConfig: GroupModelsListConfig{
+				ModelAllowlist: GroupModelAllowlist{
 					Enabled: true,
 					Models:  []string{" deepseek-custom ", "deepseek-custom", "deepseek-alt"},
 				},

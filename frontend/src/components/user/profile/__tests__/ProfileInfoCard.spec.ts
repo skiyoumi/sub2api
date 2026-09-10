@@ -15,6 +15,10 @@ vi.mock('@/stores/auth', () => ({
   })
 }))
 
+vi.mock('@/stores/payment', () => ({
+  usePaymentStore: () => ({ bonusBalance: 0, bonusSummaryLoaded: false }),
+}))
+
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
     showError: vi.fn(),

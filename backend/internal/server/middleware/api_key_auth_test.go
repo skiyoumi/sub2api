@@ -1562,7 +1562,8 @@ func TestAPIKeyAuthModelsListSkipsBilling(t *testing.T) {
 		require.Equal(t, http.StatusOK, w.Code, `path %s should skip billing`, path)
 	}
 	require.Zero(t, subscriptionCalls)
-	require.Equal(t, 3, touchCalls)
+	// Consecutive metadata reads share the last-used debounce window.
+	require.Equal(t, 1, touchCalls)
 }
 
 func TestIsModelsMetadataRead(t *testing.T) {

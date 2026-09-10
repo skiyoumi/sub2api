@@ -123,11 +123,11 @@ function resetForm(defaults?: CcSwitchDefaults) {
 
 async function selectGroup(group: AdminGroup) {
   activeGroup.value = group
-  resetForm(group.models_list_config?.cc_switch_defaults)
+  resetForm(group.model_allowlist?.cc_switch_defaults)
   loadingModels.value = true
   loadError.value = ''
   try {
-    models.value = await groupsAPI.getModelsListCandidates(group.id, group.platform)
+    models.value = await groupsAPI.getModelAllowlistCandidates(group.id, group.platform)
   } catch (error) {
     models.value = []
     loadError.value = t('admin.ccSwitchDefaults.loadModelsFailed')
@@ -140,9 +140,9 @@ async function save() {
   if (!activeGroup.value) return
   saving.value = true
   try {
-    const current = activeGroup.value.models_list_config || { enabled: false, models: [] }
+    const current = activeGroup.value.model_allowlist || { enabled: false, models: [] }
     const updated = await groupsAPI.update(activeGroup.value.id, {
-      models_list_config: {
+      model_allowlist: {
         enabled: current.enabled,
         models: current.models || [],
         cc_switch_defaults: {

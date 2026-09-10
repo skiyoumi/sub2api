@@ -9,7 +9,7 @@ import (
 
 func TestGroupFromServiceShallowExposesCCSwitchDefaults(t *testing.T) {
 	group := &service.Group{
-		ModelsListConfig: service.GroupModelsListConfig{
+		ModelAllowlist: service.GroupModelAllowlist{
 			CCSwitchDefaults: service.GroupCCSwitchDefaults{
 				Codex:    "gpt-5.5",
 				OpenCode: "gpt-5.5",
