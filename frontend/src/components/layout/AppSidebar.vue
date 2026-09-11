@@ -209,6 +209,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
 import type { CustomMenuItem } from '@/types'
 import { sanitizeUrl } from '@/utils/url'
+import { orderSidebarItems } from '@/utils/sidebarMenuOrder'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
 
@@ -748,12 +749,16 @@ function finalizeNav(items: NavItem[]): NavItem[] {
 }
 
 // User navigation items (for regular users)
-const userNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(true)))
+const userNavItems = computed((): NavItem[] => orderSidebarItems(
+  finalizeNav(buildSelfNavItems(true)), appStore.cachedPublicSettings?.sidebar_menu_order?.user,
+))
 
 // Personal navigation items (for admin's "My Account" section, without Dashboard).
 // Admins access 可用渠道 from this section just like regular users — there is no
 // separate admin entry, since the page is purely a user-facing view.
-const personalNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(false)))
+const personalNavItems = computed((): NavItem[] => orderSidebarItems(
+  finalizeNav(buildSelfNavItems(false)), appStore.cachedPublicSettings?.sidebar_menu_order?.user,
+))
 
 function customMenuNavItem(item: CustomMenuItem): NavItem {
   const path = `/custom/${item.id}`
@@ -867,14 +872,14 @@ const adminNavItems = computed((): NavItem[] => {
     for (const cm of customMenuItemsForAdmin.value) {
       filtered.push(customMenuNavItem(cm))
     }
-    return filtered
+    return orderSidebarItems(filtered, adminSettingsStore.sidebarMenuOrder?.admin)
   }
 
   visible.push({ path: '/admin/settings', label: t('nav.settings'), icon: CogIcon })
   for (const cm of customMenuItemsForAdmin.value) {
     visible.push(customMenuNavItem(cm))
   }
-  return visible
+  return orderSidebarItems(visible, adminSettingsStore.sidebarMenuOrder?.admin)
 })
 
 function toggleSidebar() {

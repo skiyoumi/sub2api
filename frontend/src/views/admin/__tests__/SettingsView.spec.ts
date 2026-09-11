@@ -749,7 +749,41 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(addButton).toBeDefined();
     await addButton!.trigger("click");
     expect(wrapper.get<HTMLSelectElement>("#custom-menu-open-mode-0").element.value).toBe("iframe");
+    expect(wrapper.get('[data-menu-path^="/custom/"]').attributes("data-menu-path")).toMatch(/^\/custom\/[a-f0-9]{24}$/);
     wrapper.unmount();
+  });
+
+  it("saves mixed menu order and reloads it without changing the other section", async () => {
+    const settings = {
+      ...baseSettingsResponse,
+      custom_menu_items: [{ id: "cards", label: "Card recharge", icon_svg: "", url: "https://cards.example.com/", visibility: "user", sort_order: 0, open_mode: "new_tab" }],
+      sidebar_menu_order: { user: ["/purchase", "/orders", "/custom/cards"], admin: ["/admin/settings", "/admin/dashboard"] },
+    };
+    getSettings.mockResolvedValue(settings);
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('[data-menu-path="/custom/cards"] [data-direction="up"]').trigger("click");
+    expect(wrapper.findAll("[data-menu-path]").slice(0, 3).map(row => row.attributes("data-menu-path"))).toEqual(["/purchase", "/custom/cards", "/orders"]);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+    const saved = updateSettings.mock.calls[0][0];
+    expect(saved.sidebar_menu_order.user.slice(0, 3)).toEqual(["/purchase", "/custom/cards", "/orders"]);
+    expect(saved.sidebar_menu_order.admin.slice(0, 2)).toEqual(["/admin/settings", "/admin/dashboard"]);
+    expect(saved.custom_menu_items[0].open_mode).toBe("new_tab");
+    expect(fetchPublicSettings).toHaveBeenCalledWith(true);
+    expect(adminSettingsFetch).toHaveBeenCalledWith(true);
+    wrapper.unmount();
+
+    getSettings.mockResolvedValue({ ...settings, ...saved });
+    const reloaded = mountView();
+    await flushPromises();
+    expect(reloaded.findAll("[data-menu-path]").slice(0, 3).map(row => row.attributes("data-menu-path"))).toEqual(["/purchase", "/custom/cards", "/orders"]);
+    await reloaded.get("[data-reset-menu-order]").trigger("click");
+    await reloaded.find("form").trigger("submit.prevent");
+    await flushPromises();
+    expect(updateSettings.mock.lastCall?.[0].sidebar_menu_order.user).toEqual([]);
+    expect(updateSettings.mock.lastCall?.[0].sidebar_menu_order.admin.slice(0, 2)).toEqual(["/admin/settings", "/admin/dashboard"]);
+    reloaded.unmount();
   });
 
   it("submits the compact home page toggle", async () => {

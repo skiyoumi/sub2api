@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import type { CustomMenuItem } from '@/types'
+import type { CustomMenuItem, SidebarMenuOrder } from '@/types'
 import AppSidebar from '../AppSidebar.vue'
 
 const { authStore, appStore, adminSettingsStore } = vi.hoisted(() => ({
@@ -13,10 +13,10 @@ const { authStore, appStore, adminSettingsStore } = vi.hoisted(() => ({
     sidebarScrollTop: 0,
     publicSettingsLoaded: true,
     siteName: 'Test',
-    cachedPublicSettings: { custom_menu_items: [] as CustomMenuItem[] },
+    cachedPublicSettings: { custom_menu_items: [] as CustomMenuItem[], sidebar_menu_order: {} as SidebarMenuOrder },
     setMobileOpen: vi.fn(),
   },
-  adminSettingsStore: { customMenuItems: [] as CustomMenuItem[], fetch: vi.fn() },
+  adminSettingsStore: { customMenuItems: [] as CustomMenuItem[], sidebarMenuOrder: {} as SidebarMenuOrder, fetch: vi.fn() },
 }))
 
 vi.mock('@/stores', () => ({
@@ -57,6 +57,8 @@ beforeEach(() => {
   authStore.isAdmin = false
   authStore.isSimpleMode = false
   appStore.cachedPublicSettings.custom_menu_items = []
+  appStore.cachedPublicSettings.sidebar_menu_order = {}
+  adminSettingsStore.sidebarMenuOrder = {}
   adminSettingsStore.customMenuItems = []
   localStorage.clear()
 })
@@ -106,5 +108,50 @@ describe('custom menu opening', () => {
     const { wrapper } = await mountSidebar()
     expect(wrapper.find('a[href^="javascript:"]').exists()).toBe(false)
     expect(wrapper.get('a[href="/custom/cards"]').attributes('target')).toBeUndefined()
+  })
+})
+
+
+describe('mixed sidebar menu order', () => {
+  it.each([false, true])('interleaves custom links with built-ins for user menus (admin=%s)', async (isAdmin) => {
+    authStore.isAdmin = isAdmin
+    const item = menu({ open_mode: 'new_tab' })
+    appStore.cachedPublicSettings.custom_menu_items = [item, menu({ id: 'private', visibility: 'admin' })]
+    appStore.cachedPublicSettings.sidebar_menu_order = {
+      user: ['/purchase', '/custom/cards', '/orders', '/batch-image', '/custom/private', '/no-longer-exists'],
+    }
+    const { wrapper } = await mountSidebar()
+    const section = wrapper.findAll('nav .sidebar-section')[isAdmin ? 1 : 0]
+    const hrefs = section.findAll('a').map(link => link.attributes('href'))
+    expect(hrefs.slice(0, 3)).toEqual(['/purchase', item.url, '/orders'])
+    expect(hrefs).not.toContain('/batch-image')
+    expect(hrefs).not.toContain('/custom/private')
+    expect(hrefs).not.toContain('/no-longer-exists')
+    expect(hrefs).toContain('/profile')
+    expect(hrefs.includes('/dashboard')).toBe(!isAdmin)
+  })
+
+  it.each([false, true])('orders admin menus while respecting simple mode (%s)', async (isSimpleMode) => {
+    Object.assign(authStore, { isAdmin: true, isSimpleMode })
+    adminSettingsStore.customMenuItems = [menu({ visibility: 'admin' })]
+    adminSettingsStore.sidebarMenuOrder = {
+      admin: ['/admin/settings', '/custom/cards', '/admin/users', '/keys'],
+      user: ['/profile'],
+    }
+    const { wrapper } = await mountSidebar()
+    const hrefs = wrapper.findAll('nav .sidebar-section')[0].findAll('a').map(link => link.attributes('href'))
+    expect(hrefs.slice(0, 2)).toEqual(['/admin/settings', '/custom/cards'])
+    expect(hrefs.includes('/admin/users')).toBe(!isSimpleMode)
+    expect(hrefs.includes('/keys')).toBe(isSimpleMode)
+    expect(hrefs).not.toContain('/profile')
+    expect(hrefs).toContain('/admin/dashboard')
+  })
+
+  it('preserves the legacy default order when no mixed order is configured', async () => {
+    appStore.cachedPublicSettings.custom_menu_items = [menu({ id: 'later', sort_order: 2 }), menu({ sort_order: 1 })]
+    const { wrapper } = await mountSidebar()
+    const hrefs = wrapper.findAll('nav a').map(link => link.attributes('href'))
+    expect(hrefs[0]).toBe('/dashboard')
+    expect(hrefs.slice(-3)).toEqual(['/profile', '/custom/cards', '/custom/later'])
   })
 })

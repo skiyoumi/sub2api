@@ -185,6 +185,11 @@ export interface SendVerifyCodeResponse {
   countdown: number
 }
 
+export interface SidebarMenuOrder {
+  user?: string[]
+  admin?: string[]
+}
+
 export interface CustomMenuItem {
   id: string
   label: string
@@ -246,6 +251,7 @@ export interface PublicSettings {
   table_default_page_size: number
   table_page_size_options: number[]
   custom_menu_items: CustomMenuItem[]
+  sidebar_menu_order?: SidebarMenuOrder
   custom_endpoints: CustomEndpoint[]
   linuxdo_oauth_enabled: boolean
   dingtalk_oauth_enabled?: boolean

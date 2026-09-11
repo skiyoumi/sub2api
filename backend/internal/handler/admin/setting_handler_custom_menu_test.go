@@ -53,3 +53,55 @@ func TestSettingHandler_CustomMenuOpenMode(t *testing.T) {
 		})
 	}
 }
+
+func TestSettingHandler_SidebarMenuOrder(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	old := `{"user":["/profile","/custom/cards"],"admin":["/admin/settings"]}`
+	for _, tc := range []struct {
+		name, body, want string
+		invalid          bool
+	}{
+		{name: "save mixed order", body: `{"sidebar_menu_order":{"user":["/purchase","/custom/cards","/orders"],"admin":["/admin/settings","/admin/dashboard"]}}`, want: `{"user":["/purchase","/custom/cards","/orders"],"admin":["/admin/settings","/admin/dashboard"]}`},
+		{name: "omitted field preserves order", body: `{}`, want: old},
+		{name: "null field preserves order", body: `{"sidebar_menu_order":null}`, want: old},
+		{name: "reset order", body: `{"sidebar_menu_order":{}}`, want: `{"user":[]}`},
+		{name: "duplicate user path", body: `{"sidebar_menu_order":{"user":["/keys","/keys"]}}`, invalid: true},
+		{name: "duplicate admin path", body: `{"sidebar_menu_order":{"admin":["/admin/settings","/admin/settings"]}}`, invalid: true},
+		{name: "external URL", body: `{"sidebar_menu_order":{"user":["https://example.com"]}}`, invalid: true},
+		{name: "invalid shape", body: `{"sidebar_menu_order":{"user":"/keys"}}`, invalid: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &settingHandlerRepoStub{values: map[string]string{service.SettingKeyPromoCodeEnabled: "true", service.SettingKeySidebarMenuOrder: old}}
+			svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+			handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewBufferString(tc.body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			handler.UpdateSettings(c)
+			if tc.invalid {
+				require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+				require.Nil(t, repo.lastUpdates)
+				require.Equal(t, old, repo.values[service.SettingKeySidebarMenuOrder])
+				return
+			}
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			require.JSONEq(t, tc.want, repo.values[service.SettingKeySidebarMenuOrder])
+			var result struct {
+				Data struct {
+					Order service.SidebarMenuOrder `json:"sidebar_menu_order"`
+				} `json:"data"`
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &result))
+			require.Equal(t, service.ParseSidebarMenuOrder(tc.want), result.Data.Order)
+
+			getRec := httptest.NewRecorder()
+			getCtx, _ := gin.CreateTestContext(getRec)
+			getCtx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/settings", nil)
+			handler.GetSettings(getCtx)
+			require.Equal(t, http.StatusOK, getRec.Code, getRec.Body.String())
+			require.NoError(t, json.Unmarshal(getRec.Body.Bytes(), &result))
+			require.Equal(t, service.ParseSidebarMenuOrder(tc.want), result.Data.Order)
+		})
+	}
+}

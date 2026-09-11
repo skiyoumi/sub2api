@@ -675,6 +675,13 @@ export default {
         integrationDocHint: 'Covers endpoint specs, idempotency semantics, and code samples'
       },
       customMenu: {
+      orderTitle: 'Menu order',
+      orderHint: 'Drag or use the arrows to reorder built-in and custom menus, then save settings. User menus also apply to the admin My Account section. Groups move together; disabled or inaccessible menus stay hidden.',
+      orderSection: { user: 'User menus', admin: 'Admin menus' },
+      resetOrder: 'Reset this section to default order',
+      customItem: 'Custom',
+      unnamedItem: 'Unnamed menu',
+      simpleModeOnly: 'Simple mode only',
         title: 'Custom Menu Pages',
         description: 'Add custom pages or links to the sidebar. Choose how they open and who can see them.',
         itemLabel: 'Menu Item #{n}',

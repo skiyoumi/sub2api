@@ -6655,50 +6655,6 @@
                     }}
                   </span>
                   <div class="flex items-center gap-2">
-                    <!-- Move up -->
-                    <button
-                      v-if="index > 0"
-                      type="button"
-                      class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-dark-700"
-                      :title="t('admin.settings.customMenu.moveUp')"
-                      @click="moveMenuItem(index, -1)"
-                    >
-                      <svg
-                        class="h-4 w-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        stroke-width="2"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          d="M5 15l7-7 7 7"
-                        />
-                      </svg>
-                    </button>
-                    <!-- Move down -->
-                    <button
-                      v-if="index < form.custom_menu_items.length - 1"
-                      type="button"
-                      class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-dark-700"
-                      :title="t('admin.settings.customMenu.moveDown')"
-                      @click="moveMenuItem(index, 1)"
-                    >
-                      <svg
-                        class="h-4 w-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        stroke-width="2"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          d="M19 9l-7 7-7-7"
-                        />
-                      </svg>
-                    </button>
                     <!-- Delete -->
                     <button
                       type="button"
@@ -6836,6 +6792,10 @@
                 </svg>
                 {{ t("admin.settings.customMenu.add") }}
               </button>
+              <SidebarMenuOrderEditor
+                v-model="form.sidebar_menu_order"
+                :custom-items="form.custom_menu_items"
+              />
             </div>
           </div>
 	        </div>
@@ -8884,6 +8844,9 @@ import ProxySelector from "@/components/common/ProxySelector.vue";
 import ImageUpload from "@/components/common/ImageUpload.vue";
 import BackupSettings from "@/views/admin/BackupView.vue";
 import EmailTemplateEditor from "@/views/admin/settings/EmailTemplateEditor.vue";
+import SidebarMenuOrderEditor from "@/views/admin/settings/SidebarMenuOrderEditor.vue";
+import { normalizeSidebarMenuOrder } from "@/utils/sidebarMenuOrder";
+import type { SidebarMenuOrder } from "@/types";
 import OpenAIFastPolicyUserSelector from "@/views/admin/settings/OpenAIFastPolicyUserSelector.vue";
 import { useClipboard } from "@/composables/useClipboard";
 import {
@@ -9553,6 +9516,7 @@ type SettingsForm = Omit<
   | "wechat_connect_mp_enabled"
   | "wechat_connect_mobile_enabled"
 > & {
+  sidebar_menu_order: SidebarMenuOrder;
   /** Form always binds a concrete boolean (SystemSettings marks this optional). */
   channel_monitor_hide_throughput: boolean;
   channel_monitor_show_quota: boolean;
@@ -9675,6 +9639,7 @@ const form = reactive<SettingsForm>({
   payment_alipay_mobile_precreate_deep_link: false,
   table_default_page_size: tablePageSizeDefault,
   table_page_size_options: [10, 20, 50, 100],
+  sidebar_menu_order: {},
   custom_menu_items: [] as Array<{
     id: string;
     label: string;
@@ -10687,8 +10652,13 @@ async function setAndCopyOIDCRedirectUrl() {
 
 // Custom menu item management
 function addMenuItem() {
+  // Allocate a stable ID before saving so new entries can participate in sorting.
+  const id = Array.from(
+    crypto.getRandomValues(new Uint8Array(12)),
+    byte => byte.toString(16).padStart(2, "0"),
+  ).join("");
   form.custom_menu_items.push({
-    id: "",
+    id,
     label: "",
     icon_svg: "",
     url: "",
@@ -10702,19 +10672,6 @@ function removeMenuItem(index: number) {
   form.custom_menu_items.splice(index, 1);
   // Re-index sort_order
   form.custom_menu_items.forEach((item, i) => {
-    item.sort_order = i;
-  });
-}
-
-function moveMenuItem(index: number, direction: -1 | 1) {
-  const targetIndex = index + direction;
-  if (targetIndex < 0 || targetIndex >= form.custom_menu_items.length) return;
-  const items = form.custom_menu_items;
-  const temp = items[index];
-  items[index] = items[targetIndex];
-  items[targetIndex] = temp;
-  // Re-index sort_order
-  items.forEach((item, i) => {
     item.sort_order = i;
   });
 }
@@ -11337,6 +11294,7 @@ async function saveSettings() {
       table_default_page_size: form.table_default_page_size,
       table_page_size_options: form.table_page_size_options,
       custom_menu_items: form.custom_menu_items,
+      sidebar_menu_order: normalizeSidebarMenuOrder(form.sidebar_menu_order, form.custom_menu_items),
       custom_endpoints: form.custom_endpoints,
       frontend_url: form.frontend_url,
       smtp_host: form.smtp_host,
