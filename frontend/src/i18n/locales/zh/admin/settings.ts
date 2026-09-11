@@ -670,8 +670,9 @@ export default {
         integrationDocHint: '包含接口说明、幂等语义及示例代码'
       },
       customMenu: {
+      noVisibleMenus: '当前分区没有可显示的菜单',
       orderTitle: '菜单排序',
-      orderHint: '拖动或使用上下箭头，将内置菜单与自定义菜单一起排序，保存设置后生效。用户菜单也用于管理员的“我的账户”。菜单组整体移动；未启用或无权限的菜单仍会隐藏。',
+      orderHint: '菜单列表与当前侧边栏保持一致。拖动或使用上下箭头调整顺序，保存设置后生效。菜单组整体移动，暂时隐藏的菜单会保留已保存的位置。',
       orderSection: { user: '用户菜单', admin: '管理菜单' },
       resetOrder: '恢复当前分区默认顺序',
       customItem: '自定义',

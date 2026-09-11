@@ -16,7 +16,7 @@
       </button>
     </div>
     <VueDraggable
-      :key="activeSection" v-model="entries" :animation="150"
+      v-if="entries.length" :key="activeSection" v-model="entries" :animation="150"
       handle=".menu-order-handle" class="max-h-96 space-y-1.5 overflow-y-auto rounded-lg border border-gray-200 p-2 dark:border-dark-600"
     >
       <div
@@ -45,26 +45,35 @@
         ><span aria-hidden="true">↓</span></button>
       </div>
     </VueDraggable>
+    <p v-else class="py-4 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.settings.customMenu.noVisibleMenus') }}</p>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { VueDraggable } from 'vue-draggable-plus'
 import type { CustomMenuItem, SidebarMenuOrder } from '@/types'
-import { getSidebarMenuEntries, orderSidebarItems, type SidebarMenuEntry, type SidebarSection } from '@/utils/sidebarMenuOrder'
+import { getSidebarMenuEntries, type SidebarMenuEntry, type SidebarSection } from '@/utils/sidebarMenus'
+import { orderSidebarItems, reorderVisibleSidebarItems } from '@/utils/sidebarMenuOrder'
+import { useSidebarMenus } from '@/composables/useSidebarMenus'
 
 const props = defineProps<{ modelValue: SidebarMenuOrder; customItems: CustomMenuItem[] }>()
 const emit = defineEmits<{ 'update:modelValue': [order: SidebarMenuOrder] }>()
 const { t } = useI18n()
-const sections: SidebarSection[] = ['user', 'admin']
+const { sections, getEntries } = useSidebarMenus()
 const activeSection = ref<SidebarSection>('user')
+watch(sections, (available) => {
+  if (!available.includes(activeSection.value)) activeSection.value = available[0] ?? 'user'
+}, { immediate: true })
 const entries = computed({
-  get: () => orderSidebarItems(getSidebarMenuEntries(activeSection.value, props.customItems), props.modelValue[activeSection.value]),
+  get: () => getEntries(activeSection.value, props.customItems, props.modelValue[activeSection.value]),
   set: (items: SidebarMenuEntry[]) => emit('update:modelValue', {
     ...props.modelValue,
-    [activeSection.value]: items.map(item => item.path),
+    [activeSection.value]: reorderVisibleSidebarItems(
+      orderSidebarItems(getSidebarMenuEntries(activeSection.value, props.customItems), props.modelValue[activeSection.value]),
+      items,
+    ),
   }),
 })
 function entryLabel(entry: SidebarMenuEntry): string {

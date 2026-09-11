@@ -675,8 +675,9 @@ export default {
         integrationDocHint: 'Covers endpoint specs, idempotency semantics, and code samples'
       },
       customMenu: {
+      noVisibleMenus: 'No menus are visible in this section.',
       orderTitle: 'Menu order',
-      orderHint: 'Drag or use the arrows to reorder built-in and custom menus, then save settings. User menus also apply to the admin My Account section. Groups move together; disabled or inaccessible menus stay hidden.',
+      orderHint: 'This list matches the current sidebar. Drag or use the arrows to reorder, then save settings. Groups move together; temporarily hidden menus retain their saved positions.',
       orderSection: { user: 'User menus', admin: 'Admin menus' },
       resetOrder: 'Reset this section to default order',
       customItem: 'Custom',

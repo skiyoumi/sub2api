@@ -4,6 +4,15 @@ import { VueDraggable } from 'vue-draggable-plus'
 import type { SidebarMenuOrder } from '@/types'
 import SidebarMenuOrderEditor from '../SidebarMenuOrderEditor.vue'
 
+vi.mock('@/stores', () => ({
+  useAuthStore: () => ({ isAdmin: true, isSimpleMode: false }),
+  useAppStore: () => ({ backendModeEnabled: false }),
+  useAdminSettingsStore: () => ({ fetch: vi.fn() }),
+}))
+vi.mock('@/utils/featureFlags', () => ({ FeatureFlags: {}, makeSidebarFlag: () => () => true }))
+vi.mock('@/composables/useBatchImageAccess', () => ({
+  useBatchImageAccess: () => ({ canUseBatchImage: { value: false }, refreshBatchImageAccess: vi.fn() }),
+}))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 const wrappers: ReturnType<typeof mount>[] = []
 afterEach(() => wrappers.splice(0).forEach(wrapper => wrapper.unmount()))

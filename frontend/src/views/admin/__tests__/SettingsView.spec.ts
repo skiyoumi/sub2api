@@ -120,6 +120,8 @@ vi.mock("@/api", () => ({
 }));
 
 vi.mock("@/stores", () => ({
+  useAuthStore: () => ({ isAdmin: true, isSimpleMode: false }),
+  useAdminSettingsStore: () => ({ fetch: adminSettingsFetch }),
   useAppStore: () => ({
     showError,
     showSuccess,
@@ -134,6 +136,11 @@ vi.mock("@/stores/adminSettings", () => ({
     fetch: adminSettingsFetch,
   }),
 }));
+
+vi.mock("@/composables/useBatchImageAccess", () => ({
+  useBatchImageAccess: () => ({ canUseBatchImage: { value: false }, refreshBatchImageAccess: vi.fn() }),
+}));
+vi.mock("@/utils/featureFlags", () => ({ FeatureFlags: {}, makeSidebarFlag: () => () => true }));
 
 vi.mock("@/composables/useClipboard", () => ({
   useClipboard: () => ({

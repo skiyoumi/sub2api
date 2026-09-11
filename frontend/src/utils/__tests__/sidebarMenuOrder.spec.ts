@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CustomMenuItem } from '@/types'
-import { getSidebarMenuEntries, normalizeSidebarMenuOrder, orderSidebarItems } from '../sidebarMenuOrder'
+import { normalizeSidebarMenuOrder, orderSidebarItems, reorderVisibleSidebarItems } from '../sidebarMenuOrder'
+import { getSidebarMenuEntries } from '../sidebarMenus'
 
 describe('sidebar menu ordering', () => {
   it('ignores duplicate and obsolete paths and appends new entries without mutating input', () => {
@@ -24,4 +25,10 @@ describe('sidebar menu ordering', () => {
     expect(order.admin).not.toContain('/custom/new')
     expect(getSidebarMenuEntries('admin', custom).filter(item => item.custom).map(item => item.path)).toEqual(['/custom/moved'])
   })
+})
+
+it('retains hidden menu positions when visible entries are reordered', () => {
+  const items = ['/keys', '/batch-image', '/custom/cards', '/purchase'].map(path => ({ path }))
+  const visible = [items[3], items[0], items[2]]
+  expect(reorderVisibleSidebarItems(items, visible)).toEqual(['/purchase', '/batch-image', '/keys', '/custom/cards'])
 })
