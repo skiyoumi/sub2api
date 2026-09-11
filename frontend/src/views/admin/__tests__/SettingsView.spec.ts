@@ -720,6 +720,38 @@ describe("admin SettingsView payment visible method controls", () => {
     adminSettingsFetch.mockResolvedValue(undefined);
   });
 
+  it.each([undefined, "new_tab"] as const)("loads and saves custom menu open mode %s", async (open_mode) => {
+    getSettings.mockResolvedValue({
+      ...baseSettingsResponse,
+      custom_menu_items: [{
+        id: "cards", label: "Card recharge", icon_svg: "", url: "https://cards.example.com/",
+        visibility: "user", sort_order: 0, open_mode,
+      }],
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    const select = wrapper.get<HTMLSelectElement>("#custom-menu-open-mode-0");
+    expect(select.element.value).toBe(open_mode || "iframe");
+    const nextMode = open_mode === "new_tab" ? "iframe" : "new_tab";
+    await select.setValue(nextMode);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({
+      custom_menu_items: [expect.objectContaining({ id: "cards", open_mode: nextMode })],
+    }));
+    wrapper.unmount();
+  });
+
+  it("defaults a newly added custom menu to embedded mode", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    const addButton = wrapper.findAll("button").find(button => button.text() === "admin.settings.customMenu.add");
+    expect(addButton).toBeDefined();
+    await addButton!.trigger("click");
+    expect(wrapper.get<HTMLSelectElement>("#custom-menu-open-mode-0").element.value).toBe("iframe");
+    wrapper.unmount();
+  });
+
   it("submits the compact home page toggle", async () => {
     const wrapper = mountView();
     await flushPromises();

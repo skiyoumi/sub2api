@@ -6758,6 +6758,27 @@
                     </select>
                   </div>
 
+                  <!-- Open mode -->
+                  <div class="sm:col-span-2">
+                    <label
+                      :for="`custom-menu-open-mode-${index}`"
+                      class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                    >
+                      {{ t("admin.settings.customMenu.openMode") }}
+                    </label>
+                    <select
+                      :id="`custom-menu-open-mode-${index}`"
+                      v-model="item.open_mode"
+                      class="input text-sm"
+                    >
+                      <option value="iframe">{{ t("admin.settings.customMenu.openModeIframe") }}</option>
+                      <option value="new_tab">{{ t("admin.settings.customMenu.openModeNewTab") }}</option>
+                    </select>
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.customMenu.openModeHint") }}
+                    </p>
+                  </div>
+
                   <!-- URL (full width) -->
                   <div class="sm:col-span-2">
                     <label
@@ -9659,6 +9680,7 @@ const form = reactive<SettingsForm>({
     label: string;
     icon_svg: string;
     url: string;
+    open_mode?: "iframe" | "new_tab";
     visibility: "user" | "admin";
     sort_order: number;
   }>,
@@ -10670,6 +10692,7 @@ function addMenuItem() {
     label: "",
     icon_svg: "",
     url: "",
+    open_mode: "iframe",
     visibility: "user",
     sort_order: form.custom_menu_items.length,
   });
@@ -10870,6 +10893,10 @@ async function loadSettings() {
         (form as Record<string, unknown>)[key] = value;
       }
     }
+    form.custom_menu_items = form.custom_menu_items.map((item) => ({
+      ...item,
+      open_mode: item.open_mode === "new_tab" ? "new_tab" : "iframe",
+    }));
     syncCaptchaProviderSelection();
     if (!form.claude_oauth_system_prompt_blocks?.trim()) {
       form.claude_oauth_system_prompt_blocks =

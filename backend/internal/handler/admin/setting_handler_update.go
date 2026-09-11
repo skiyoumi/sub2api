@@ -1307,6 +1307,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 					return
 				}
 			}
+			switch item.OpenMode {
+			case "", "iframe", "new_tab":
+			default:
+				response.BadRequest(c, "Custom menu item open_mode must be 'iframe' or 'new_tab'")
+				return
+			}
 			if item.Visibility != "user" && item.Visibility != "admin" {
 				response.BadRequest(c, "Custom menu item visibility must be 'user' or 'admin'")
 				return

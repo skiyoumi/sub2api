@@ -77,11 +77,12 @@
               </div>
             </template>
             <!-- Normal item (no children) -->
-            <router-link
+            <component
               v-else
-              :to="item.path"
+              :is="item.href ? 'a' : RouterLink"
+              v-bind="navLinkProps(item)"
               class="sidebar-link mb-1"
-              :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
+              :class="{ 'sidebar-link-active': !item.href && isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
               :title="sidebarCollapsed ? item.label : undefined"
               :id="
                 item.path === '/admin/accounts'
@@ -100,7 +101,7 @@
                 <span class="min-w-0 truncate">{{ item.label }}</span>
                 <span v-if="item.badge" class="sidebar-nav-badge">{{ item.badge }}</span>
               </span>
-            </router-link>
+            </component>
           </template>
         </div>
 
@@ -112,12 +113,13 @@
             </span>
           </div>
 
-          <router-link
+          <component
             v-for="item in personalNavItems"
             :key="item.path"
-            :to="item.path"
+            :is="item.href ? 'a' : RouterLink"
+            v-bind="navLinkProps(item)"
             class="sidebar-link mb-1"
-            :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
+            :class="{ 'sidebar-link-active': !item.href && isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
             :title="sidebarCollapsed ? item.label : undefined"
             :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
             @click="handleMenuItemClick(item.path)"
@@ -128,19 +130,20 @@
               <span class="min-w-0 truncate">{{ item.label }}</span>
               <span v-if="item.badge" class="sidebar-nav-badge">{{ item.badge }}</span>
             </span>
-          </router-link>
+          </component>
         </div>
       </template>
 
       <!-- Regular User View -->
       <template v-else-if="!appStore.backendModeEnabled">
         <div class="sidebar-section">
-          <router-link
+          <component
             v-for="item in userNavItems"
             :key="item.path"
-            :to="item.path"
+            :is="item.href ? 'a' : RouterLink"
+            v-bind="navLinkProps(item)"
             class="sidebar-link mb-1"
-            :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
+            :class="{ 'sidebar-link-active': !item.href && isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
             :title="sidebarCollapsed ? item.label : undefined"
             :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
             @click="handleMenuItemClick(item.path)"
@@ -151,7 +154,7 @@
               <span class="min-w-0 truncate">{{ item.label }}</span>
               <span v-if="item.badge" class="sidebar-nav-badge">{{ item.badge }}</span>
             </span>
-          </router-link>
+          </component>
         </div>
       </template>
     </nav>
@@ -198,12 +201,13 @@
 
 <script setup lang="ts">
 import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import VersionBadge from '@/components/common/VersionBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
+import type { CustomMenuItem } from '@/types'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
@@ -213,6 +217,7 @@ interface NavItem {
   label: string
   icon: unknown
   iconSvg?: string
+  href?: string
   badge?: string
   hideInSimpleMode?: boolean
   children?: NavItem[]
@@ -731,12 +736,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/redeem', label: t('nav.redeem'), icon: GiftIcon, hideInSimpleMode: true },
     { path: '/affiliate', label: t('nav.affiliate'), icon: UsersIcon, hideInSimpleMode: true, featureFlag: flagAffiliate },
     { path: '/profile', label: t('nav.profile'), icon: UserIcon },
-    ...customMenuItemsForUser.value.map((item): NavItem => ({
-      path: `/custom/${item.id}`,
-      label: item.label,
-      icon: null,
-      iconSvg: item.icon_svg,
-    })),
+    ...customMenuItemsForUser.value.map(customMenuNavItem),
   )
   return items
 }
@@ -754,6 +754,26 @@ const userNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(tru
 // Admins access 可用渠道 from this section just like regular users — there is no
 // separate admin entry, since the page is purely a user-facing view.
 const personalNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(false)))
+
+function customMenuNavItem(item: CustomMenuItem): NavItem {
+  const path = `/custom/${item.id}`
+  const isMarkdown = !!item.page_slug?.trim() || item.url.startsWith('md:')
+  return {
+    path,
+    label: item.label,
+    icon: null,
+    iconSvg: item.icon_svg,
+    href: item.open_mode === 'new_tab'
+      ? (isMarkdown ? router.resolve(path).href : sanitizeUrl(item.url))
+      : undefined,
+  }
+}
+
+function navLinkProps(item: NavItem) {
+  return item.href
+    ? { href: item.href, target: '_blank', rel: 'noopener noreferrer' }
+    : { to: item.path }
+}
 
 // Custom menu items filtered by visibility
 const customMenuItemsForUser = computed(() => {
@@ -845,14 +865,14 @@ const adminNavItems = computed((): NavItem[] => {
     filtered.push({ path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon })
     filtered.push({ path: '/admin/settings', label: t('nav.settings'), icon: CogIcon })
     for (const cm of customMenuItemsForAdmin.value) {
-      filtered.push({ path: `/custom/${cm.id}`, label: cm.label, icon: null, iconSvg: cm.icon_svg })
+      filtered.push(customMenuNavItem(cm))
     }
     return filtered
   }
 
   visible.push({ path: '/admin/settings', label: t('nav.settings'), icon: CogIcon })
   for (const cm of customMenuItemsForAdmin.value) {
-    visible.push({ path: `/custom/${cm.id}`, label: cm.label, icon: null, iconSvg: cm.icon_svg })
+    visible.push(customMenuNavItem(cm))
   }
   return visible
 })
