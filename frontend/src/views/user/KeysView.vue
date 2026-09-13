@@ -2093,18 +2093,13 @@ const executeCcsImport = (selection: { app: CcSwitchApp; name: string; model: st
   })
 
   try {
-    closeCcsImport()
     window.open(deeplink, '_self')
-
-    // Check if the protocol handler worked by detecting if we're still focused
-    setTimeout(() => {
-      if (document.hasFocus()) {
-        // Still focused means the protocol handler likely failed
-        appStore.showError(t('keys.ccSwitchNotInstalled'))
-      }
-    }, 100)
-  } catch (error) {
-    appStore.showError(t('keys.ccSwitchNotInstalled'))
+    closeCcsImport()
+    // Page focus cannot tell whether an external protocol handler opened.
+    // The browser may still be waiting for permission to launch CC-Switch.
+    appStore.showInfo(t('keys.ccsImport.openRequested'), 8000)
+  } catch {
+    appStore.showError(t('keys.ccsImport.openFailed'))
   }
 }
 

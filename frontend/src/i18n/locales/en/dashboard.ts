@@ -241,7 +241,6 @@ export default {
     ipBlacklistPlaceholder: '1.2.3.4\n5.6.0.0/16',
     ipBlacklistHint: 'One IP or CIDR per line. These IPs will be blocked from using this key.',
     ipRestrictionEnabled: 'IP restriction enabled',
-    ccSwitchNotInstalled: 'CC-Switch is not installed or the protocol handler is not registered. Please install CC-Switch first or manually copy the API key.',
     ccsClientSelect: {
       title: 'Select Client',
       description: 'Please select the client type to import to CC-Switch:',
@@ -263,6 +262,8 @@ export default {
       loadFailed: 'Failed to load supported models',
       noModels: 'This key has no available models',
       open: 'Open CC Switch',
+      openRequested: 'Requested to open CC-Switch. Allow your browser to open the app, then switch to CC-Switch to confirm the import. If nothing happens, check that CC-Switch is installed or copy the API key to configure it manually.',
+      openFailed: 'Unable to open CC-Switch. Check that your browser allows opening external apps, or copy the API key to configure it manually.',
     },
     // Quota and expiration
     quotaLimit: 'Quota Limit',

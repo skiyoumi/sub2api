@@ -1,9 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
 import type { ApiKey } from '@/types'
 import KeysView from '../KeysView.vue'
+import CcSwitchImportModal from '@/components/keys/CcSwitchImportModal.vue'
+
+enableAutoUnmount(afterEach)
 
 const {
   listKeys,
@@ -13,6 +16,7 @@ const {
   getUserGroupRates,
   showError,
   showSuccess,
+  showInfo,
   copyToClipboard,
   isCurrentStep,
   nextStep,
@@ -24,6 +28,7 @@ const {
   getUserGroupRates: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
+  showInfo: vi.fn(),
   copyToClipboard: vi.fn(),
   isCurrentStep: vi.fn(),
   nextStep: vi.fn(),
@@ -79,6 +84,7 @@ vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
     showError,
     showSuccess,
+    showInfo,
   }),
 }))
 
@@ -169,6 +175,7 @@ const DataTableStub = {
         >
           <slot name="cell-id" :value="row.id" :row="row" />
         </div>
+        <slot name="cell-actions" :row="row" />
         <slot name="cell-name" :value="row.name" :row="row" />
         <div data-test="current-concurrency">
           <slot name="cell-current_concurrency" :value="row.current_concurrency" :row="row" />
@@ -230,6 +237,7 @@ const mountView = async () => {
         SearchInput: SearchInputStub,
         Icon: IconStub,
         UseKeyModal: true,
+        CcSwitchImportModal: true,
         EndpointPopover: true,
         GroupBadge: true,
         GroupOptionItem: true,
@@ -256,7 +264,7 @@ const getButtonByText = (wrapper: VueWrapper, text: string) => {
   return button
 }
 
-describe('user KeysView column settings', () => {
+describe('user KeysView', () => {
   beforeEach(() => {
     localStorage.clear()
 
@@ -267,6 +275,7 @@ describe('user KeysView column settings', () => {
     getUserGroupRates.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
+    showInfo.mockReset()
     copyToClipboard.mockReset()
     isCurrentStep.mockReset()
     nextStep.mockReset()
@@ -283,6 +292,65 @@ describe('user KeysView column settings', () => {
     getAvailableGroups.mockResolvedValue([])
     getUserGroupRates.mockResolvedValue({})
     isCurrentStep.mockReturnValue(false)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  it('requests a CCS import without reporting failure while the browser stays focused', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    const wrapper = await mountView()
+    vi.useFakeTimers()
+
+    await getButtonByText(wrapper, 'keys.importToCcSwitch').trigger('click')
+    const modal = wrapper.getComponent(CcSwitchImportModal)
+    expect(modal.props('show')).toBe(true)
+    modal.vm.$emit('submit', { app: 'codex', name: 'Test provider', model: 'test-model' })
+    await nextTick()
+
+    expect(open).toHaveBeenCalledTimes(1)
+    const [deeplink, target] = open.mock.calls[0]
+    expect(target).toBe('_self')
+    const url = new URL(String(deeplink))
+    expect(url.protocol).toBe('ccswitch:')
+    expect(url.host).toBe('v1')
+    expect(url.pathname).toBe('/import')
+    expect(url.searchParams.get('apiKey')).toBe('sk-test-key')
+    expect(url.searchParams.get('app')).toBe('codex')
+    expect(url.searchParams.get('model')).toBe('test-model')
+    expect(modal.props('show')).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(showError).not.toHaveBeenCalled()
+    expect(showSuccess).not.toHaveBeenCalled()
+    expect(showInfo).toHaveBeenCalledWith('keys.ccsImport.openRequested', expect.any(Number))
+  })
+
+  it('keeps the CCS import available to retry when opening the application throws', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementationOnce(() => {
+      throw new Error('External application blocked')
+    }).mockReturnValue(null)
+    const wrapper = await mountView()
+
+    await getButtonByText(wrapper, 'keys.importToCcSwitch').trigger('click')
+    const modal = wrapper.getComponent(CcSwitchImportModal)
+    const selection = { app: 'codex', name: 'Test provider', model: 'test-model' }
+    modal.vm.$emit('submit', selection)
+    await nextTick()
+
+    expect(showError).toHaveBeenCalledWith('keys.ccsImport.openFailed')
+    expect(showInfo).not.toHaveBeenCalled()
+    expect(modal.props('show')).toBe(true)
+    expect(modal.props('apiKey')).toBe('sk-test-key')
+
+    modal.vm.$emit('submit', selection)
+    await nextTick()
+    expect(open).toHaveBeenCalledTimes(2)
+    expect(modal.props('show')).toBe(false)
+    expect(showInfo).toHaveBeenCalledTimes(1)
   })
 
   it('uses the default API key columns with low-frequency columns hidden', async () => {
