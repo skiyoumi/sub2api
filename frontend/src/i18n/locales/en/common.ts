@@ -192,6 +192,8 @@ export default {
     promoCodes: 'Promo Codes',
     settings: 'Settings',
     myAccount: 'My Account',
+    qqGroup: 'QQ Group: {number}',
+    joinQqGroup: 'Join QQ Group: {number}',
     lightMode: 'Light Mode',
     darkMode: 'Dark Mode',
     collapse: 'Collapse',

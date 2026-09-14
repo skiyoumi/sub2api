@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { CustomMenuItem, SidebarMenuOrder } from '@/types'
+import * as device from '@/utils/device'
 import AppSidebar from '../AppSidebar.vue'
 
 const { authStore, appStore, adminSettingsStore } = vi.hoisted(() => ({
@@ -63,6 +64,49 @@ beforeEach(() => {
   localStorage.clear()
 })
 afterEach(() => wrappers.splice(0).forEach(wrapper => wrapper.unmount()))
+
+describe('QQ group shortcut', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('opens desktop QQ directly with a fresh invitation timestamp on every click', async () => {
+    vi.spyOn(device, 'isMobileDevice').mockReturnValue(false)
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1789372800000)
+    const { wrapper, router } = await mountSidebar()
+
+    for (const timestamp of [1789372800000, 1789372860000]) {
+      now.mockReturnValue(timestamp)
+      await wrapper.get('button.sidebar-qq-group').trigger('click')
+      const [url, target] = open.mock.calls.at(-1)!
+      const link = new URL(String(url))
+      expect(target).toBe('_self')
+      expect(link.protocol).toBe('tencent:')
+      expect(link.hostname).toBe('groupwpa')
+      expect(link.searchParams.get('subcmd')).toBe('all')
+      const payload = JSON.parse(Buffer.from(link.searchParams.get('param')!, 'hex').toString('utf8'))
+      expect(payload).toMatchObject({ groupUin: '774132190', timeStamp: timestamp, auth: '' })
+      expect(payload.authKey).toBeTruthy()
+      expect(router.currentRoute.value.path).toBe('/dashboard')
+    }
+  })
+
+  it('opens the mobile QQ group card directly', async () => {
+    vi.spyOn(device, 'isMobileDevice').mockReturnValue(true)
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    const { wrapper } = await mountSidebar()
+    await wrapper.get('button.sidebar-qq-group').trigger('click')
+
+    const [url, target] = open.mock.calls[0]!
+    const link = new URL(String(url))
+    expect(target).toBe('_self')
+    expect(link.protocol).toBe('mqqapi:')
+    expect(link.hostname).toBe('card')
+    expect(link.pathname).toBe('/show_pslcard')
+    expect(link.searchParams.get('uin')).toBe('774132190')
+    expect(link.searchParams.get('card_type')).toBe('group')
+    expect(link.searchParams.get('authSig')).toBeTruthy()
+  })
+})
 
 describe('custom menu opening', () => {
   it.each([undefined, 'iframe'] as const)('keeps %s mode in the current tab', async (open_mode) => {

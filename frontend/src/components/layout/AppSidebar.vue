@@ -161,6 +161,23 @@
 
     <!-- Bottom Section -->
     <div class="mt-auto border-t border-gray-100 p-3 dark:border-dark-800">
+      <!-- QQ Group -->
+      <button
+        type="button"
+        @click="openQqGroup"
+        class="sidebar-link sidebar-qq-group mb-2 w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+        :class="{ 'sidebar-link-collapsed': sidebarCollapsed }"
+        :title="t('nav.joinQqGroup', { number: qqGroupNumber })"
+        :aria-label="t('nav.joinQqGroup', { number: qqGroupNumber })"
+      >
+        <img :src="qqIcon" alt="" aria-hidden="true" class="h-6 w-6 flex-shrink-0" />
+        <span
+          class="sidebar-label"
+          :class="{ 'sidebar-label-collapsed': sidebarCollapsed }"
+          :aria-hidden="sidebarCollapsed ? 'true' : 'false'"
+        >{{ t('nav.qqGroup', { number: qqGroupNumber }) }}</span>
+      </button>
+
       <!-- Theme Toggle -->
       <button
         @click="toggleTheme"
@@ -206,9 +223,12 @@ import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import VersionBadge from '@/components/common/VersionBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
+import qqIcon from '@/assets/icons/qq.svg'
 import { sanitizeSvg } from '@/utils/sanitize'
 import type { CustomMenuItem } from '@/types'
 import { sanitizeUrl } from '@/utils/url'
+import { isMobileDevice } from '@/utils/device'
+import { buildQqGroupJoinUrl } from '@/utils/qq'
 import { useSidebarMenus } from '@/composables/useSidebarMenus'
 import type { SidebarMenuEntry, SidebarMenuIcon } from '@/utils/sidebarMenus'
 
@@ -228,6 +248,9 @@ interface NavItem {
 }
 
 const { t } = useI18n()
+const qqGroupNumber = '774132190'
+// Public invitation signature resolved from https://qm.qq.com/q/9IA4fmV4ru.
+const qqGroupAuthKey = 'YjsmE9g9ynENHSRzMa2ic82hrmyMfPasqD5uKfaJh5Gz30R4byaApWmrONAr3yVZ'
 
 const route = useRoute()
 const router = useRouter()
@@ -742,6 +765,10 @@ function navLinkProps(item: NavItem) {
     : { to: item.path }
 }
 
+function openQqGroup() {
+  window.open(buildQqGroupJoinUrl(qqGroupNumber, qqGroupAuthKey, isMobileDevice()), '_self')
+}
+
 function toggleSidebar() {
   appStore.toggleSidebar()
 }
@@ -844,6 +871,15 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.sidebar-qq-group {
+  @apply bg-gray-100 text-gray-800 dark:bg-dark-800 dark:text-dark-100;
+  @apply hover:bg-gray-200 dark:hover:bg-dark-700;
+}
+
+.sidebar-qq-group.sidebar-link-collapsed {
+  @apply px-3;
+}
+
 .sidebar-logo {
   flex: 0 0 2.25rem;
   min-width: 2.25rem;

@@ -192,6 +192,8 @@ export default {
     promoCodes: '优惠码',
     settings: '系统设置',
     myAccount: '我的账户',
+    qqGroup: 'QQ群：{number}',
+    joinQqGroup: '点击加入QQ群：{number}',
     lightMode: '浅色模式',
     darkMode: '深色模式',
     collapse: '收起',
