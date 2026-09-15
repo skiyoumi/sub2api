@@ -3,11 +3,14 @@ package repository
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/smithy-go"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
@@ -52,29 +55,78 @@ func NewS3ImageStorage(ctx context.Context, cfg *config.ImageStorageConfig) (*S3
 
 // Save 上传图片字节，返回可访问 URL：配了 public_base_url 则返回公开直链，否则返回 presigned 临时链接。
 func (s *S3ImageStorage) Save(ctx context.Context, key, contentType string, data []byte) (string, error) {
+	if _, err := s.Put(ctx, key, contentType, data); err != nil {
+		return "", err
+	}
+	if s.publicBaseURL != "" {
+		return s.publicBaseURL + "/" + strings.TrimLeft(key, "/"), nil
+	}
+	presignClient := s3.NewPresignClient(s.client)
+	result, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{Bucket: &s.bucket, Key: &key}, s3.WithPresignExpires(s.presignExpiry))
+	if err != nil {
+		return "", fmt.Errorf("presign url: %w", err)
+	}
+	return result.URL, nil
+}
+
+func (s *S3ImageStorage) Put(ctx context.Context, key, contentType string, data []byte) (string, error) {
 	finish := servertiming.ObserveDependency(ctx, "s3")
-	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      &s.bucket,
-		Key:         &key,
-		Body:        bytes.NewReader(data),
-		ContentType: &contentType,
+	cacheControl := "private, no-store"
+	result, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:       &s.bucket,
+		Key:          &key,
+		Body:         bytes.NewReader(data),
+		ContentType:  &contentType,
+		CacheControl: &cacheControl,
 	})
 	finish()
 	if err != nil {
 		return "", fmt.Errorf("S3 PutObject: %w", err)
 	}
 
-	if s.publicBaseURL != "" {
-		return s.publicBaseURL + "/" + strings.TrimLeft(key, "/"), nil
+	if result.VersionId != nil {
+		return *result.VersionId, nil
 	}
+	return "", nil
+}
 
-	presignClient := s3.NewPresignClient(s.client)
-	result, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
-		Bucket: &s.bucket,
-		Key:    &key,
-	}, s3.WithPresignExpires(s.presignExpiry))
-	if err != nil {
-		return "", fmt.Errorf("presign url: %w", err)
+func (s *S3ImageStorage) Open(ctx context.Context, key, version string) (io.ReadCloser, error) {
+	in := &s3.GetObjectInput{Bucket: &s.bucket, Key: &key}
+	if version != "" {
+		in.VersionId = &version
 	}
-	return result.URL, nil
+	out, err := s.client.GetObject(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return out.Body, nil
+}
+
+func (s *S3ImageStorage) Delete(ctx context.Context, key, version string) error {
+	if version != "" {
+		if _, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &s.bucket, Key: &key, VersionId: &version}); err != nil {
+			return err
+		}
+	}
+	// Each asset has its own immutable UUID key. A retried PUT, or a crash before
+	// persisting VersionId, may nevertheless leave an additional S3 version. HEAD
+	// finds that version without requiring bucket-wide ListObjectVersions access.
+	for attempt := 0; attempt < 16; attempt++ {
+		head, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: &s.bucket, Key: &key})
+		if err != nil {
+			var apiErr smithy.APIError
+			if errors.As(err, &apiErr) && (apiErr.ErrorCode() == "NotFound" || apiErr.ErrorCode() == "NoSuchKey") {
+				return nil
+			}
+			return err
+		}
+		in := &s3.DeleteObjectInput{Bucket: &s.bucket, Key: &key, VersionId: head.VersionId}
+		if _, err := s.client.DeleteObject(ctx, in); err != nil {
+			return err
+		}
+		if head.VersionId == nil || *head.VersionId == "" {
+			return nil
+		}
+	}
+	return errors.New("image still has object versions; cleanup will retry")
 }

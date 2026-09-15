@@ -23,6 +23,34 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
+func TestImageStudioBuiltArtworkUsesStaticAssetRoute(t *testing.T) {
+	styles, err := fs.Glob(frontendFS, "dist/assets/ImageStudioView-*.css")
+	require.NoError(t, err)
+	if len(styles) == 0 {
+		t.Skip("build the frontend before verifying bundled studio artwork")
+	}
+	assets, err := fs.Glob(frontendFS, "dist/assets/inspiration-*.png")
+	require.NoError(t, err)
+	require.Len(t, assets, 1, "studio artwork must be bundled under /assets, away from /images API routes")
+	assetURL := "/" + strings.TrimPrefix(assets[0], "dist/")
+	for _, style := range styles {
+		css, err := fs.ReadFile(frontendFS, style)
+		require.NoError(t, err)
+		require.Contains(t, string(css), assetURL)
+		require.NotContains(t, string(css), "/images/studio/")
+	}
+	frontend, err := NewFrontendServer(nil)
+	require.NoError(t, err)
+	router := gin.New()
+	router.Use(frontend.Middleware())
+	router.NoRoute(func(c *gin.Context) { c.Status(http.StatusNotFound) })
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, assetURL, nil))
+	require.Equal(t, http.StatusOK, response.Code)
+	require.Equal(t, "image/png", response.Header().Get("Content-Type"))
+	require.True(t, bytes.HasPrefix(response.Body.Bytes(), []byte{137, 80, 78, 71, 13, 10, 26, 10}))
+}
+
 func TestInjectSiteTitle(t *testing.T) {
 	t.Run("replaces_title_with_site_name", func(t *testing.T) {
 		html := []byte(`<html><head><title>Sub2API - AI API Gateway</title></head><body></body></html>`)

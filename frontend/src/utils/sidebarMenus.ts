@@ -55,6 +55,7 @@ const builtInSidebarMenus: Record<SidebarSection, SidebarMenuEntry[]> = {
   user: [
     { path: '/dashboard', labelKey: 'nav.dashboard', icon: 'DashboardIcon', userOnly: true },
     { path: '/keys', labelKey: 'nav.apiKeys', icon: 'KeyIcon' },
+    { path: '/image-studio', labelKey: 'imageStudio.title', icon: 'BatchImageIcon', hideInSimpleMode: true },
     { path: '/batch-image', labelKey: 'nav.batchImage', icon: 'BatchImageIcon', hideInSimpleMode: true, feature: 'batchImage' },
     { path: '/usage', labelKey: 'nav.usage', icon: 'ChartIcon', hideInSimpleMode: true },
     { path: '/available-channels', labelKey: 'nav.availableChannels', icon: 'ChannelIcon', hideInSimpleMode: true, feature: 'availableChannels' },

@@ -14,7 +14,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/google/wire"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 )
 
 func ProvideGrokOAuthService(proxyRepo ProxyRepository, oauthClient GrokOAuthClient, cfg *config.Config, redisClient *redis.Client) *GrokOAuthService {
@@ -667,23 +666,29 @@ func ProvideImageStorageSettingService(
 	backup *BackupService,
 	factory ImageStorageFactory,
 	cfg *config.Config,
+	assets *ImageAssetService,
 ) *ImageStorageSettingService {
-	if cfg.ImageStorage.Enabled && !cfg.ImageStorage.Active() {
-		// 列出具体缺失的键。若这些键其实已在环境变量里设过，说明它们没被读进来，
-		// 请确认 setDefaults 中已为其注册默认值（见 config.setEnvReachableDefaults）。
-		logger.L().Warn("image_storage.enabled is true in config but object storage is not fully configured; configure it in the admin UI or complete the config file",
-			zap.Strings("missing_keys", cfg.ImageStorage.MissingCredentialKeys()))
-	}
-	return NewImageStorageSettingService(settingRepo, encryptor, backup, factory, cfg.ImageStorage)
+	// Missing cloud credentials are resolved to local server storage at runtime.
+	s := NewImageStorageSettingService(settingRepo, encryptor, backup, factory, cfg.ImageStorage)
+	s.assets = assets
+	return s
 }
 
 // ProvideImageTaskService 构造异步图片任务服务。
 //
-// 对象存储是异步图片任务的启用前提：仅当开关打开且凭证齐全时功能才可用，否则整体禁用
-// （handler 返回 404，不创建任务、不写 Redis），从而避免大 base64 结果撑爆 Redis。
+// 图片必须先转存后保存任务结果；未配置云存储时默认使用服务器本地目录，
+// 从而避免大 base64 结果撑爆 Redis。
 // 启用状态由 settings 服务在运行时解析，因此后台改开关后无需重启即可生效。
 func ProvideImageTaskService(store ImageTaskStore, settings *ImageStorageSettingService) *ImageTaskService {
-	return NewImageTaskServiceWithResolver(store, settings.Resolver(), defaultImageTaskTTL, defaultImageTaskExecutionTimeout)
+	s := NewImageTaskServiceWithResolver(store, settings.Resolver(), defaultImageTaskTTL, defaultImageTaskExecutionTimeout)
+	s.assets = settings.assets
+	return s
+}
+
+func ProvideImageAssetService(repo ImageAssetRepository, factory ImageStorageFactory, encryptor SecretEncryptor) *ImageAssetService {
+	s := NewImageAssetService(repo, factory, encryptor)
+	s.Start()
+	return s
 }
 
 // ProvideBackupService creates and starts BackupService
@@ -844,6 +849,7 @@ var ProviderSet = wire.NewSet(
 	NewOpenAIGatewayService,
 	ProvideImageStorageSettingService,
 	ProvideImageTaskService,
+	ProvideImageAssetService,
 	ProvideBatchImageModelPricingResolver,
 	NewBatchImagePublicService,
 	NewBatchImageDownloadService,

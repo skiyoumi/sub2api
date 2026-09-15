@@ -79,6 +79,8 @@ Desktop.ini
 # 临时文件
 # ===================
 tmp/
+.tmp/
+generated-images/
 temp/
 *.tmp
 *.temp
@@ -137,6 +139,7 @@ docs/*
 !docs/PAYMENT_CN.md
 !docs/ADMIN_PAYMENT_INTEGRATION_API.md
 !docs/ASYNC_IMAGE_TASKS.md
+!docs/image-studio.md
 !docs/BATCH_IMAGE_MVP.md
 !docs/COMPOSITE_GROUPS.md
 !docs/PLUGIN_DEVELOPMENT.md

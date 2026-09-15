@@ -17,6 +17,7 @@ import (
 type stubSettingRepo struct {
 	mu     sync.Mutex
 	values map[string]string
+	getErr error
 }
 
 func newStubSettingRepo() *stubSettingRepo {
@@ -27,6 +28,9 @@ func (r *stubSettingRepo) Get(context.Context, string) (*Setting, error) { retur
 func (r *stubSettingRepo) GetValue(_ context.Context, key string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.getErr != nil {
+		return "", r.getErr
+	}
 	return r.values[key], nil
 }
 
@@ -108,8 +112,8 @@ func TestImageStorageSettingsToggleTakesEffectWithoutRestart(t *testing.T) {
 	})
 
 	uploader, enabled := svc.resolve()
-	require.False(t, enabled, "disabled until an admin turns it on")
-	require.Nil(t, uploader)
+	require.True(t, enabled, "unconfigured image storage defaults to the server")
+	require.NotNil(t, uploader)
 
 	_, err := svc.Update(ctx, ImageStorageSettings{Enabled: true, ReuseBackupS3: true})
 	require.NoError(t, err)
@@ -123,7 +127,7 @@ func TestImageStorageSettingsToggleTakesEffectWithoutRestart(t *testing.T) {
 	_, enabled = svc.resolve()
 	require.False(t, enabled, "turning it back off must also apply immediately")
 
-	require.Len(t, *built, 1, "the S3 client is built only when the feature is on")
+	require.Len(t, *built, 2, "local default is followed by the explicitly configured S3 client")
 }
 
 func TestImageStorageSettingsReuseBackupCredentials(t *testing.T) {
@@ -221,7 +225,7 @@ func TestImageStorageSettingsRejectSecretWithEphemeralKey(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestImageStorageSettingsIncompleteStaysDisabled(t *testing.T) {
+func TestImageStorageSettingsIncompleteUsesLocalStorage(t *testing.T) {
 	svc, _, built := newImageStorageFixture(t, config.ImageStorageConfig{})
 	ctx := context.Background()
 
@@ -229,8 +233,75 @@ func TestImageStorageSettingsIncompleteStaysDisabled(t *testing.T) {
 	require.NoError(t, err)
 
 	_, enabled := svc.resolve()
-	require.False(t, enabled, "missing credentials must not enable the feature")
-	require.Empty(t, *built, "no client is built from an incomplete configuration")
+	require.True(t, enabled, "missing cloud credentials use server storage")
+	require.Len(t, *built, 1)
+	require.Equal(t, "local", (*built)[0].Provider)
+}
+
+func TestImageStorageSettingsDefaultAndLegacyBindings(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		cfg      config.ImageStorageConfig
+		provider string
+		enabled  bool
+	}{
+		{"empty legacy YAML", config.ImageStorageConfig{}, "local", true},
+		{"old disabled S3 defaults", config.ImageStorageConfig{Provider: "s3", Enabled: false}, "local", true},
+		{"new default", config.ImageStorageConfig{Provider: "s3", Enabled: true}, "local", true},
+		{"incomplete Qiniu", config.ImageStorageConfig{Provider: "qiniu", Enabled: true, Endpoint: "https://qiniu.example", Bucket: "images"}, "local", true},
+		{"configured Qiniu", config.ImageStorageConfig{Provider: "qiniu", Enabled: true, Endpoint: "https://qiniu.example", Bucket: "images", AccessKeyID: "ak", SecretAccessKey: "sk"}, "qiniu", true},
+		{"explicit local off", config.ImageStorageConfig{Provider: "local", Enabled: false}, "local", false},
+		{"configured S3 off", config.ImageStorageConfig{Provider: "s3", Enabled: false, Bucket: "images", AccessKeyID: "ak", SecretAccessKey: "sk"}, "s3", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.cfg.LocalDirectory = "/app/data/custom-images"
+			svc, _, _ := newImageStorageFixture(t, tc.cfg)
+			cfg, err := svc.effectiveConfig(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, tc.provider, cfg.Provider)
+			require.Equal(t, tc.enabled, cfg.Enabled)
+			require.Equal(t, "/app/data/custom-images", cfg.LocalDirectory)
+			if cfg.Provider == "local" {
+				require.Empty(t, cfg.SecretAccessKey)
+			}
+			view, err := svc.Get(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, tc.provider, view.Provider)
+			require.Equal(t, tc.enabled, view.Enabled)
+		})
+	}
+}
+
+func TestImageStorageSettingsEmptySavedLegacyAndMissingBackup(t *testing.T) {
+	for _, raw := range []string{`{"enabled":false}`, `{"provider":"s3","enabled":false}`, `{"enabled":false,"reuse_backup_s3":true}`} {
+		svc, repo, built := newImageStorageFixture(t, config.ImageStorageConfig{})
+		require.NoError(t, repo.Set(context.Background(), settingKeyImageStorageConfig, raw))
+		_, enabled := svc.resolve()
+		require.True(t, enabled)
+		require.Len(t, *built, 1)
+		require.Equal(t, "local", (*built)[0].Provider)
+	}
+}
+
+func TestImageStorageSettingsDatabaseErrorDoesNotEnableFallback(t *testing.T) {
+	svc, repo, built := newImageStorageFixture(t, config.ImageStorageConfig{})
+	repo.getErr = errors.New("database unavailable")
+	_, enabled := svc.resolve()
+	require.False(t, enabled)
+	require.Empty(t, *built)
+}
+
+func TestImageStorageSettingsMissingDatabaseRowUsesLocalDefault(t *testing.T) {
+	svc, repo, built := newImageStorageFixtureWithKey(t, config.ImageStorageConfig{}, false)
+	repo.getErr = ErrSettingNotFound
+	_, enabled := svc.resolve()
+	require.True(t, enabled, "a new installation needs neither a settings row nor cloud encryption keys")
+	require.Len(t, *built, 1)
+	require.Equal(t, "local", (*built)[0].Provider)
+	settings, err := svc.Get(context.Background())
+	require.NoError(t, err)
+	require.True(t, settings.Enabled)
+	require.Equal(t, "local", settings.Provider)
 }
 
 // Deployments that already enabled the feature through config.yaml must keep

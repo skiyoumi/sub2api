@@ -247,11 +247,12 @@ type BatchImageConfig struct {
 	VertexGCSBaseURL             string `mapstructure:"vertex_gcs_base_url"`
 }
 
-// ImageStorageConfig 配置异步图片任务结果上传的 S3 兼容对象存储。
-// Enabled 同时作为异步图片任务功能的总开关：未启用或未配置完整凭证时，
-// 异步生图接口整体禁用，避免把上游返回的大 base64 结果塞进 Redis。
+// ImageStorageConfig 配置异步图片任务的存储位置。
+// 设置服务将未配置完整的云存储解析为服务器本地目录，并管理两小时保留期。
 type ImageStorageConfig struct {
 	Enabled         bool   `mapstructure:"enabled"`
+	Provider        string `mapstructure:"provider"` // local, qiniu (S3 compatible), or s3
+	LocalDirectory  string `mapstructure:"local_directory"`
 	Endpoint        string `mapstructure:"endpoint"` // e.g. https://<account_id>.r2.cloudflarestorage.com
 	Region          string `mapstructure:"region"`   // R2 用 "auto"
 	Bucket          string `mapstructure:"bucket"`
@@ -266,10 +267,16 @@ type ImageStorageConfig struct {
 
 // IsConfigured 检查对象存储必要字段是否已配置
 func (c *ImageStorageConfig) IsConfigured() bool {
+	if c.Provider == "local" {
+		return strings.TrimSpace(c.LocalDirectory) != ""
+	}
+	if c.Provider == "qiniu" && strings.TrimSpace(c.Endpoint) == "" {
+		return false
+	}
 	return c.Bucket != "" && c.AccessKeyID != "" && c.SecretAccessKey != ""
 }
 
-// Active 返回异步图片任务是否可用：开关打开且凭证齐全
+// Active 检查当前存储绑定；运行时还会由设置服务解析本地存储回落。
 func (c *ImageStorageConfig) Active() bool {
 	return c.Enabled && c.IsConfigured()
 }
@@ -278,6 +285,15 @@ func (c *ImageStorageConfig) Active() bool {
 // 用于启动日志：只说"凭证不完整"会让运维以为自己漏填了，而实际可能是值填了却没被读到。
 func (c *ImageStorageConfig) MissingCredentialKeys() []string {
 	var missing []string
+	if c.Provider == "local" {
+		if strings.TrimSpace(c.LocalDirectory) == "" {
+			missing = append(missing, "image_storage.local_directory")
+		}
+		return missing
+	}
+	if c.Provider == "qiniu" && strings.TrimSpace(c.Endpoint) == "" {
+		missing = append(missing, "image_storage.endpoint")
+	}
 	if c.Bucket == "" {
 		missing = append(missing, "image_storage.bucket")
 	}
@@ -2228,7 +2244,9 @@ func setDefaults() {
 	viper.SetDefault("batch_image.vertex_gcs_base_url", "")
 
 	// Image storage (async image task result offload to S3-compatible object storage)
-	viper.SetDefault("image_storage.enabled", false)
+	viper.SetDefault("image_storage.enabled", true)
+	viper.SetDefault("image_storage.provider", "s3")
+	viper.SetDefault("image_storage.local_directory", "./data/generated-images")
 	viper.SetDefault("image_storage.region", "auto")
 	viper.SetDefault("image_storage.prefix", "images/")
 	viper.SetDefault("image_storage.force_path_style", false)

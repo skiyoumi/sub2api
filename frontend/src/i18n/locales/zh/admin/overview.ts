@@ -103,8 +103,15 @@ export default {
         saved: 'S3 配置已保存'
       },
       imageStorage: {
-        title: '异步生图对象存储',
-        description: '开启后，异步生图接口可用，生成结果转存到对象存储，只把短链接写入 Redis。与备份共用同一套 S3 客户端，保存后立即生效，无需重启。',
+        provider: '图片存储方式',
+        local: '本地存储',
+        qiniu: '七牛云 Kodo',
+        localDirectory: '本地保存目录',
+        retention: '图片仅保留 2 小时，到期停止访问。后台每分钟清理过期文件，失败后自动重试；请使用持久化目录。',
+        qiniuHint: '使用七牛云 S3 兼容接口，填写空间对应的 Endpoint、Region、S3 空间名及访问密钥。',
+        endpointGuide: '查看七牛云区域配置',
+        title: '图片存储',
+        description: '未配置云存储时默认保存到服务器，也可切换到七牛云或 S3。图片保留 2 小时，保存设置后立即生效。',
         enabled: '启用异步生图',
         reuseBackupS3: '复用上方备份的 S3 配置（只用不同的存储桶/前缀）',
         bucket: '存储桶',

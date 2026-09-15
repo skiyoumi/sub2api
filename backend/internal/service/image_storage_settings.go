@@ -18,6 +18,8 @@ const settingKeyImageStorageConfig = "image_storage_config"
 // ErrImageStorageIncomplete 表示开关已打开但凭证不全，无法启用异步生图。
 var ErrImageStorageIncomplete = errors.New("image storage is enabled but bucket/access_key_id/secret_access_key are incomplete")
 
+var errImageBackupStorageMissing = errors.New("backup image storage is not configured")
+
 // ImageStorageFactory 由 repository 层提供，把配置变成一个可用的对象存储实现。
 // 与 BackupObjectStoreFactory 同样的注入方式，避免 service 反向依赖 repository。
 type ImageStorageFactory func(ctx context.Context, cfg *config.ImageStorageConfig) (ImageStorage, error)
@@ -27,8 +29,10 @@ type ImageStorageFactory func(ctx context.Context, cfg *config.ImageStorageConfi
 // ReuseBackupS3 为真时不保存自己的凭证，直接借用数据库备份已配置的 S3 端点与密钥，
 // 只用自己的 Bucket/Prefix 区分对象；这样"数据走 backups/、图片走 images/"无需重复配置。
 type ImageStorageSettings struct {
-	Enabled       bool `json:"enabled"`
-	ReuseBackupS3 bool `json:"reuse_backup_s3"`
+	Enabled        bool   `json:"enabled"`
+	Provider       string `json:"provider"`
+	LocalDirectory string `json:"local_directory"`
+	ReuseBackupS3  bool   `json:"reuse_backup_s3"`
 
 	Bucket           string `json:"bucket"` // 留空且复用备份时，沿用备份桶
 	Prefix           string `json:"prefix"`
@@ -53,6 +57,7 @@ type ImageStorageSettingService struct {
 	encryptor   SecretEncryptor
 	backup      *BackupService
 	factory     ImageStorageFactory
+	assets      *ImageAssetService
 
 	// fallback 是 config.yaml 里的配置。后台从未保存过设置时沿用它，
 	// 保证升级前已用配置文件开启该功能的部署不被打断。
@@ -114,11 +119,22 @@ func (s *ImageStorageSettingService) resolve() (*ImageResultUploader, bool) {
 			zap.Strings("missing_keys", cfg.MissingCredentialKeys()))
 		return nil, false
 	}
+	if s.assets != nil && cfg.Provider != "local" && (s.backup == nil || !s.backup.EncryptionKeyConfigured()) {
+		logger.L().Error("image_storage requires a persistent TOTP_ENCRYPTION_KEY for retention credentials")
+		return nil, false
+	}
 
 	storage, err := s.factory(ctx, cfg)
 	if err != nil {
 		logger.L().Error("image_storage.client_build_failed; async image tasks stay disabled", zap.Error(err))
 		return nil, false
+	}
+	if s.assets != nil {
+		storage, err = s.assets.Storage(cfg, storage)
+		if err != nil {
+			logger.L().Error("image_storage.retention_init_failed", zap.Error(err))
+			return nil, false
+		}
 	}
 	s.uploader = NewImageResultUploader(storage, cfg.Prefix, cfg.MaxDownloadByte, nil)
 	s.enabled = true
@@ -144,7 +160,15 @@ func (s *ImageStorageSettingService) Get(ctx context.Context) (*ImageStorageSett
 		return nil, err
 	}
 	if settings == nil {
-		settings = settingsFromConfig(s.fallback)
+		settings = settingsFromConfig(*runtimeImageStorageConfig(s.fallback))
+	} else if legacyEmptyImageStorage(settings) {
+		cfg, err := s.effectiveConfig(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if cfg.Provider == "local" {
+			settings = settingsFromConfig(*cfg)
+		}
 	}
 	settings.SecretAccessKey = ""
 	return settings, nil
@@ -166,8 +190,13 @@ func (s *ImageStorageSettingService) SecretConfigured(ctx context.Context) bool 
 // Update 保存设置并立即生效。SecretAccessKey 留空表示沿用已保存的值。
 func (s *ImageStorageSettingService) Update(ctx context.Context, in ImageStorageSettings) (*ImageStorageSettings, error) {
 	normalizeImageStorageSettings(&in)
+	if err := validateImageStorageProvider(in); err != nil {
+		return nil, err
+	}
 
-	if in.ReuseBackupS3 {
+	if in.Provider == "local" {
+		in.SecretAccessKey = ""
+	} else if in.ReuseBackupS3 {
 		// 复用备份凭证时不落自己的密钥，避免同一份密钥在库里存两份。
 		in.Endpoint, in.Region, in.AccessKeyID, in.SecretAccessKey = "", "", "", ""
 		in.ForcePathStyle = false
@@ -201,11 +230,14 @@ func (s *ImageStorageSettingService) Update(ctx context.Context, in ImageStorage
 	return &in, nil
 }
 
-// TestConnection 用给定设置试建一次客户端，用于后台的"测试连接"按钮。
+// TestConnection 验证存储的写入、读取与删除权限。
 // 与 Update 一样支持留空 SecretAccessKey 表示沿用已保存的值。
 func (s *ImageStorageSettingService) TestConnection(ctx context.Context, in ImageStorageSettings) error {
 	normalizeImageStorageSettings(&in)
-	if !in.ReuseBackupS3 && in.SecretAccessKey == "" {
+	if err := validateImageStorageProvider(in); err != nil {
+		return err
+	}
+	if in.Provider != "local" && !in.ReuseBackupS3 && in.SecretAccessKey == "" {
 		old, err := s.load(ctx)
 		if err == nil && old != nil {
 			in.SecretAccessKey = old.SecretAccessKey
@@ -218,8 +250,15 @@ func (s *ImageStorageSettingService) TestConnection(ctx context.Context, in Imag
 	if !cfg.IsConfigured() {
 		return ErrImageStorageIncomplete
 	}
-	if _, err := s.factory(ctx, cfg); err != nil {
+	if s.assets != nil && cfg.Provider != "local" && (s.backup == nil || !s.backup.EncryptionKeyConfigured()) {
+		return ErrSecretEncryptionKeyNotConfigured
+	}
+	storage, err := s.factory(ctx, cfg)
+	if err != nil {
 		return err
+	}
+	if s.assets != nil {
+		return s.assets.TestStorage(ctx, cfg, storage)
 	}
 	return nil
 }
@@ -231,15 +270,61 @@ func (s *ImageStorageSettingService) effectiveConfig(ctx context.Context) (*conf
 		return nil, err
 	}
 	if settings == nil {
-		fallback := s.fallback
-		return &fallback, nil
+		return runtimeImageStorageConfig(s.fallback), nil
 	}
-	return s.toImageStorageConfig(ctx, settings)
+	legacyEmpty := legacyEmptyImageStorage(settings)
+	normalizeImageStorageSettings(settings)
+	cfg, err := s.toImageStorageConfig(ctx, settings)
+	if errors.Is(err, errImageBackupStorageMissing) {
+		// A legacy deployment may have selected "reuse backup" without ever
+		// configuring a backup bucket. It can still store images on the server.
+		settings.ReuseBackupS3 = false
+		cfg, err = s.toImageStorageConfig(ctx, settings)
+		if cfg != nil && legacyEmpty {
+			cfg.Enabled = true
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return runtimeImageStorageConfig(*cfg), nil
+}
+
+func legacyEmptyImageStorage(in *ImageStorageSettings) bool {
+	return (in.Provider == "" || in.Provider == "s3") && in.Bucket == "" && in.AccessKeyID == "" && in.SecretAccessKey == ""
+}
+
+// Empty legacy S3 defaults used enabled=false to gate all image generation.
+// Migrate that unconfigured state to local storage; an explicit local/qiniu
+// disable or a disabled configured S3 binding remains a deliberate off switch.
+func runtimeImageStorageConfig(cfg config.ImageStorageConfig) *config.ImageStorageConfig {
+	legacyEmpty := legacyEmptyImageStorage(settingsFromConfig(cfg))
+	if strings.TrimSpace(cfg.LocalDirectory) == "" {
+		cfg.LocalDirectory = "./data/generated-images"
+	}
+	if !cfg.Enabled && !legacyEmpty {
+		return &cfg
+	}
+	if cfg.Provider != "local" && !cfg.IsConfigured() {
+		cfg = config.ImageStorageConfig{
+			Enabled: true, Provider: "local", LocalDirectory: cfg.LocalDirectory,
+			Prefix: cfg.Prefix, MaxDownloadByte: cfg.MaxDownloadByte,
+		}
+	}
+	if cfg.Prefix == "" {
+		cfg.Prefix = "images/"
+	}
+	if cfg.MaxDownloadByte <= 0 {
+		cfg.MaxDownloadByte = defaultImageMaxDownloadBytes
+	}
+	return &cfg
 }
 
 func (s *ImageStorageSettingService) toImageStorageConfig(ctx context.Context, in *ImageStorageSettings) (*config.ImageStorageConfig, error) {
 	cfg := &config.ImageStorageConfig{
 		Enabled:         in.Enabled,
+		Provider:        in.Provider,
+		LocalDirectory:  in.LocalDirectory,
 		Bucket:          in.Bucket,
 		Prefix:          in.Prefix,
 		PublicBaseURL:   in.PublicBaseURL,
@@ -258,7 +343,7 @@ func (s *ImageStorageSettingService) toImageStorageConfig(ctx context.Context, i
 			return nil, err
 		}
 		if backupCfg == nil {
-			return nil, errors.New("image storage is set to reuse the backup S3 configuration, but no backup S3 configuration exists")
+			return nil, errImageBackupStorageMissing
 		}
 		cfg.Endpoint = backupCfg.Endpoint
 		cfg.Region = backupCfg.Region
@@ -294,7 +379,13 @@ func (s *ImageStorageSettingService) load(ctx context.Context) (*ImageStorageSet
 		return nil, nil //nolint:nilnil // no repository means no stored settings
 	}
 	raw, err := s.settingRepo.GetValue(ctx, settingKeyImageStorageConfig)
-	if err != nil || strings.TrimSpace(raw) == "" {
+	if errors.Is(err, ErrSettingNotFound) {
+		return nil, nil //nolint:nilnil // no saved settings: use server defaults
+	}
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(raw) == "" {
 		return nil, nil //nolint:nilnil // never configured is a valid state
 	}
 	var settings ImageStorageSettings
@@ -307,6 +398,8 @@ func (s *ImageStorageSettingService) load(ctx context.Context) (*ImageStorageSet
 func settingsFromConfig(cfg config.ImageStorageConfig) *ImageStorageSettings {
 	return &ImageStorageSettings{
 		Enabled:          cfg.Enabled,
+		Provider:         cfg.Provider,
+		LocalDirectory:   cfg.LocalDirectory,
 		Bucket:           cfg.Bucket,
 		Prefix:           cfg.Prefix,
 		PublicBaseURL:    cfg.PublicBaseURL,
@@ -321,6 +414,20 @@ func settingsFromConfig(cfg config.ImageStorageConfig) *ImageStorageSettings {
 }
 
 func normalizeImageStorageSettings(in *ImageStorageSettings) {
+	in.Provider = strings.ToLower(strings.TrimSpace(in.Provider))
+	if in.Provider == "" {
+		in.Provider = "s3"
+	}
+	in.LocalDirectory = strings.TrimSpace(in.LocalDirectory)
+	if in.LocalDirectory == "" {
+		in.LocalDirectory = "./data/generated-images"
+	}
+	if in.Provider != "s3" {
+		in.ReuseBackupS3 = false
+	}
+	if in.Provider == "local" {
+		in.Endpoint, in.Region, in.AccessKeyID, in.SecretAccessKey = "", "", "", ""
+	}
 	in.Bucket = strings.TrimSpace(in.Bucket)
 	in.Endpoint = strings.TrimSpace(in.Endpoint)
 	in.Region = strings.TrimSpace(in.Region)
@@ -344,4 +451,14 @@ func normalizeImageStorageSettings(in *ImageStorageSettings) {
 	if in.MaxDownloadBytes <= 0 {
 		in.MaxDownloadBytes = defaultImageMaxDownloadBytes
 	}
+}
+
+func validateImageStorageProvider(in ImageStorageSettings) error {
+	if in.Provider != "local" && in.Provider != "qiniu" && in.Provider != "s3" {
+		return errors.New("unsupported image storage provider")
+	}
+	if in.Enabled && in.Provider == "qiniu" && in.Endpoint == "" {
+		return errors.New("Qiniu S3 endpoint is required")
+	}
+	return nil
 }

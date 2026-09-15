@@ -103,8 +103,15 @@ export default {
         saved: 'S3 configuration saved'
       },
       imageStorage: {
-        title: 'Async image object storage',
-        description: 'Enables the asynchronous image endpoints and offloads generated images to object storage, keeping only short links in Redis. Shares the S3 client with backups and takes effect on save — no restart needed.',
+        provider: 'Image storage provider',
+        local: 'Local storage',
+        qiniu: 'Qiniu Kodo',
+        localDirectory: 'Local storage directory',
+        retention: 'Images expire after 2 hours. A worker deletes expired files every minute and retries failures. Use a persistent directory.',
+        qiniuHint: 'Use the Qiniu S3-compatible endpoint, region, S3 bucket name and access credentials for your storage zone.',
+        endpointGuide: 'Qiniu region configuration',
+        title: 'Image storage',
+        description: 'Images use server storage by default when cloud storage is unconfigured. Choose Qiniu or S3 as needed. Images expire after two hours.',
         enabled: 'Enable async image tasks',
         reuseBackupS3: 'Reuse the backup S3 configuration above (different bucket/prefix only)',
         bucket: 'Bucket',

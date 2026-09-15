@@ -80,6 +80,8 @@ func (u *ImageResultUploader) Rewrite(ctx context.Context, taskID string, result
 	if len(items) == 0 {
 		return result, nil
 	}
+	commonSize := ""
+	uniformSize := true
 	for i, item := range items {
 		data, contentType, err := u.fetchImageBytes(ctx, item)
 		if err != nil {
@@ -96,7 +98,30 @@ func (u *ImageResultUploader) Rewrite(ctx context.Context, taskID string, result
 		}
 		item["url"] = urlRaw
 		delete(item, "b64_json")
+		// The returned bytes are authoritative, even when an upstream repeats the
+		// requested size or normalizes controls to auto. Never resize the artwork.
+		delete(item, "size")
+		delete(item, "width")
+		delete(item, "height")
+		width, height := detectImageByteDimensions(data)
+		if width > 0 && height > 0 {
+			size := fmt.Sprintf("%dx%d", width, height)
+			item["size"], _ = json.Marshal(size)
+			item["width"], _ = json.Marshal(width)
+			item["height"], _ = json.Marshal(height)
+			if i == 0 {
+				commonSize = size
+			} else if commonSize != size {
+				uniformSize = false
+			}
+		} else {
+			uniformSize = false
+		}
 		items[i] = item
+	}
+	delete(top, "size")
+	if uniformSize && commonSize != "" {
+		top["size"], _ = json.Marshal(commonSize)
 	}
 	newData, err := json.Marshal(items)
 	if err != nil {
@@ -115,9 +140,15 @@ func (u *ImageResultUploader) fetchImageBytes(ctx context.Context, item map[stri
 		var b64 string
 		if err := json.Unmarshal(raw, &b64); err == nil {
 			if b64 = strings.TrimSpace(b64); b64 != "" {
+				if int64(base64.StdEncoding.DecodedLen(len(b64))) > u.maxDownloadBytes+2 {
+					return nil, "", errors.New("base64 image exceeds size limit")
+				}
 				data, err := base64.StdEncoding.DecodeString(b64)
 				if err != nil {
 					return nil, "", fmt.Errorf("decode b64_json: %w", err)
+				}
+				if int64(len(data)) > u.maxDownloadBytes {
+					return nil, "", errors.New("base64 image exceeds size limit")
 				}
 				return data, detectImageContentType(data), nil
 			}

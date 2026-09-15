@@ -126,6 +126,7 @@ var ProviderSet = wire.NewSet(
 	NewUpdateCache,
 	NewGeminiTokenCache,
 	NewImageTaskStore,
+	NewImageAssetRepository,
 	NewBatchImageQueue,
 	NewBatchImageDownloadLimiter,
 	NewLeaderLockCache,
@@ -189,6 +190,9 @@ func ProvideEnt(cfg *config.Config) (*ent.Client, error) {
 // 设置保存后重建，而不是在启动时定死一份。
 func ProvideImageStorageFactory() service.ImageStorageFactory {
 	return func(ctx context.Context, cfg *config.ImageStorageConfig) (service.ImageStorage, error) {
+		if cfg.Provider == "local" {
+			return NewLocalImageStorage(cfg)
+		}
 		return NewS3ImageStorage(ctx, cfg)
 	}
 }

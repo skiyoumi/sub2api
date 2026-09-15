@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -104,6 +106,36 @@ func TestAsyncImageHandlerSubmitAndPoll(t *testing.T) {
 	require.Equal(t, "no-store", pollWriter.Header().Get("Cache-Control"))
 	require.Empty(t, pollWriter.Header().Get("Retry-After"))
 	require.Contains(t, pollWriter.Body.String(), "https://example.test/image.png")
+	require.Contains(t, pollWriter.Body.String(), `"request":{"prompt":"cat","model":"gpt-image-1"`)
+}
+
+func TestImageTaskRequestMetadata(t *testing.T) {
+	input, err := imageTaskRequestMetadata("application/json", []byte(`{"prompt":"Original\nprompt","model":"gpt-image-2","size":"1234x987","quality":"high","n":2,"image":"private reference","api_key":"private key"}`))
+	require.NoError(t, err)
+	require.Equal(t, "Original\nprompt", input.Prompt)
+	require.Equal(t, "1234x987", input.Size)
+	encoded, err := json.Marshal(input)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "private")
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for name, value := range map[string]string{"prompt": "原始提示词\n第二行", "model": "gpt-image-2", "size": "1234x987", "quality": "high", "n": "2", "api_key": "private key"} {
+		require.NoError(t, writer.WriteField(name, value))
+	}
+	file, err := writer.CreateFormFile("image", "reference.png")
+	require.NoError(t, err)
+	_, err = file.Write([]byte("private reference bytes"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	input, err = imageTaskRequestMetadata(writer.FormDataContentType(), body.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, "原始提示词\n第二行", input.Prompt)
+	require.Equal(t, "1234x987", input.Size)
+	require.Equal(t, 2, input.N)
+	encoded, err = json.Marshal(input)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "private")
 }
 
 // When object storage is not configured the feature is fully disabled: the

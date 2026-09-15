@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +27,46 @@ type AsyncImageHandler struct {
 	tasks   *service.ImageTaskService
 	openAI  *OpenAIGatewayHandler
 	execute func(platform string, c *gin.Context)
+}
+
+func (h *AsyncImageHandler) List(c *gin.Context) {
+	if !h.pollable() {
+		imageTaskError(c, service.ErrImageTaskUnavailable)
+		return
+	}
+	key, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok || key == nil {
+		imageTaskError(c, service.ErrImageTaskForbidden)
+		return
+	}
+	items, err := h.tasks.List(c.Request.Context(), service.ImageTaskOwner{UserID: key.UserID, APIKeyID: key.ID})
+	if err != nil {
+		imageTaskError(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, gin.H{"data": items, "retention_seconds": int(service.ImageRetention.Seconds()), "enabled": h.enabled()})
+}
+
+func (h *AsyncImageHandler) Content(c *gin.Context) {
+	if !h.pollable() {
+		imageTaskError(c, service.ErrImageTaskUnavailable)
+		return
+	}
+	key, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok || key == nil {
+		imageTaskError(c, service.ErrImageTaskForbidden)
+		return
+	}
+	body, contentType, err := h.tasks.ReadAsset(c.Request.Context(), service.ImageTaskOwner{UserID: key.UserID, APIKeyID: key.ID}, c.Param("asset_id"))
+	if err != nil {
+		imageTaskError(c, err)
+		return
+	}
+	defer body.Close()
+	c.Header("Cache-Control", "private, no-store, max-age=0")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.DataFromReader(http.StatusOK, -1, contentType, body, nil)
 }
 
 func NewAsyncImageHandler(tasks *service.ImageTaskService, openAI *OpenAIGatewayHandler) *AsyncImageHandler {
@@ -62,6 +105,11 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 	if apiKey.Group != nil {
 		platform = apiKey.Group.Platform
 	}
+	if platform == service.PlatformComposite {
+		if target, resolved := service.ResolvedTargetPlatformFromContext(c.Request.Context()); resolved {
+			platform = target
+		}
+	}
 	if platform != service.PlatformOpenAI && platform != service.PlatformGrok {
 		imageTaskJSONError(c, http.StatusNotFound, "not_found_error", "Images API is not supported for this platform")
 		return
@@ -99,9 +147,14 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 	if !h.checkSecurityAuditBeforeSubmit(c, apiKey, platform, body) {
 		return
 	}
+	input, err := imageTaskRequestMetadata(c.GetHeader("Content-Type"), body)
+	if err != nil {
+		imageTaskJSONError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return
+	}
 
 	taskCtx, recorder, cancel := newAsyncImageContext(c, body, h.tasks.ExecutionTimeout())
-	task, err := h.tasks.Create(c.Request.Context(), service.ImageTaskOwner{UserID: apiKey.UserID, APIKeyID: apiKey.ID})
+	task, err := h.tasks.CreateWithRequest(c.Request.Context(), service.ImageTaskOwner{UserID: apiKey.UserID, APIKeyID: apiKey.ID}, input)
 	if err != nil {
 		cancel()
 		imageTaskError(c, err)
@@ -120,9 +173,56 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 		"created_at": task.CreatedAt,
 		"expires_at": task.ExpiresAt,
 		"poll_url":   pollURL,
+		"request":    task.Request,
 	})
 
 	go h.run(task.ID, platform, taskCtx, recorder, cancel)
+}
+
+func imageTaskRequestMetadata(contentType string, body []byte) (*service.ImageTaskRequest, error) {
+	input := &service.ImageTaskRequest{}
+	mediaType, params, _ := mime.ParseMediaType(contentType)
+	if mediaType != "multipart/form-data" {
+		if err := json.Unmarshal(body, input); err != nil {
+			return nil, errors.New("invalid image request fields")
+		}
+		return input, nil
+	}
+	reader := multipart.NewReader(bytes.NewReader(body), params["boundary"])
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, errors.New("invalid multipart image request")
+		}
+		name := part.FormName()
+		if part.FileName() != "" || (name != "prompt" && name != "model" && name != "size" && name != "aspect_ratio" && name != "quality" && name != "n") {
+			_ = part.Close()
+			continue
+		}
+		value, err := io.ReadAll(io.LimitReader(part, 65537))
+		_ = part.Close()
+		if err != nil || len(value) > 65536 {
+			return nil, errors.New("image request field exceeds 64 KiB")
+		}
+		switch name {
+		case "prompt":
+			input.Prompt = string(value)
+		case "model":
+			input.Model = string(value)
+		case "size":
+			input.Size = string(value)
+		case "aspect_ratio":
+			input.AspectRatio = string(value)
+		case "quality":
+			input.Quality = string(value)
+		case "n":
+			input.N, _ = strconv.Atoi(string(value))
+		}
+	}
+	return input, nil
 }
 
 func (h *AsyncImageHandler) checkSecurityAuditBeforeSubmit(c *gin.Context, apiKey *service.APIKey, platform string, body []byte) bool {

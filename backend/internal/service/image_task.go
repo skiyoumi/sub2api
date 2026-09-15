@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -19,7 +21,7 @@ const (
 	ImageTaskStatusCompleted  = "completed"
 	ImageTaskStatusFailed     = "failed"
 
-	defaultImageTaskTTL              = 24 * time.Hour
+	defaultImageTaskTTL              = ImageRetention
 	defaultImageTaskExecutionTimeout = 30 * time.Minute
 )
 
@@ -32,31 +34,44 @@ var (
 // ImageTaskRecord is the private Redis representation of an asynchronous image
 // request. Ownership fields are intentionally omitted from the public view.
 type ImageTaskRecord struct {
-	ID          string          `json:"id"`
-	UserID      int64           `json:"user_id"`
-	APIKeyID    int64           `json:"api_key_id"`
-	Status      string          `json:"status"`
-	HTTPStatus  int             `json:"http_status,omitempty"`
-	Result      json.RawMessage `json:"result,omitempty"`
-	Error       json.RawMessage `json:"error,omitempty"`
-	CreatedAt   int64           `json:"created_at"`
-	CompletedAt *int64          `json:"completed_at,omitempty"`
-	ExpiresAt   int64           `json:"expires_at"`
+	ID          string            `json:"id"`
+	UserID      int64             `json:"user_id"`
+	APIKeyID    int64             `json:"api_key_id"`
+	Status      string            `json:"status"`
+	HTTPStatus  int               `json:"http_status,omitempty"`
+	Result      json.RawMessage   `json:"result,omitempty"`
+	Error       json.RawMessage   `json:"error,omitempty"`
+	CreatedAt   int64             `json:"created_at"`
+	CompletedAt *int64            `json:"completed_at,omitempty"`
+	ExpiresAt   int64             `json:"expires_at"`
+	Request     *ImageTaskRequest `json:"request,omitempty"`
+}
+
+// ImageTaskRequest contains only reusable generation inputs, never credentials
+// or reference image bytes. It expires with the task's Redis record.
+type ImageTaskRequest struct {
+	Prompt      string `json:"prompt"`
+	Model       string `json:"model"`
+	Size        string `json:"size,omitempty"`
+	AspectRatio string `json:"aspect_ratio,omitempty"`
+	Quality     string `json:"quality,omitempty"`
+	N           int    `json:"n,omitempty"`
 }
 
 // ImageTask is the API-safe task representation returned to callers.
 type ImageTask struct {
-	ID          string          `json:"id"`
-	TaskID      string          `json:"task_id"`
-	Object      string          `json:"object"`
-	Status      string          `json:"status"`
-	HTTPStatus  int             `json:"http_status,omitempty"`
-	ImageURL    string          `json:"image_url,omitempty"`
-	Result      json.RawMessage `json:"result,omitempty"`
-	Error       json.RawMessage `json:"error,omitempty"`
-	CreatedAt   int64           `json:"created_at"`
-	CompletedAt *int64          `json:"completed_at,omitempty"`
-	ExpiresAt   int64           `json:"expires_at"`
+	ID          string            `json:"id"`
+	TaskID      string            `json:"task_id"`
+	Object      string            `json:"object"`
+	Status      string            `json:"status"`
+	HTTPStatus  int               `json:"http_status,omitempty"`
+	ImageURL    string            `json:"image_url,omitempty"`
+	Result      json.RawMessage   `json:"result,omitempty"`
+	Error       json.RawMessage   `json:"error,omitempty"`
+	CreatedAt   int64             `json:"created_at"`
+	CompletedAt *int64            `json:"completed_at,omitempty"`
+	ExpiresAt   int64             `json:"expires_at"`
+	Request     *ImageTaskRequest `json:"request,omitempty"`
 }
 
 type ImageTaskOwner struct {
@@ -77,6 +92,8 @@ type ImageStorageResolver func() (uploader *ImageResultUploader, enabled bool)
 
 type ImageTaskService struct {
 	store            ImageTaskStore
+	assets           *ImageAssetService
+	bindings         sync.Map // task ID -> uploader captured at submission
 	uploader         *ImageResultUploader
 	enabled          bool
 	resolve          ImageStorageResolver
@@ -151,6 +168,10 @@ func (s *ImageTaskService) ExecutionTimeout() time.Duration {
 }
 
 func (s *ImageTaskService) Create(ctx context.Context, owner ImageTaskOwner) (*ImageTask, error) {
+	return s.CreateWithRequest(ctx, owner, nil)
+}
+
+func (s *ImageTaskService) CreateWithRequest(ctx context.Context, owner ImageTaskOwner, input *ImageTaskRequest) (*ImageTask, error) {
 	if s == nil || s.store == nil {
 		return nil, ErrImageTaskUnavailable
 	}
@@ -163,8 +184,15 @@ func (s *ImageTaskService) Create(ctx context.Context, owner ImageTaskOwner) (*I
 		CreatedAt: now.Unix(),
 		ExpiresAt: now.Add(s.ttl).Unix(),
 	}
+	if input != nil {
+		copy := *input
+		task.Request = &copy
+	}
 	if err := s.store.Save(ctx, task, s.ttl); err != nil {
 		return nil, ErrImageTaskUnavailable.WithCause(err)
+	}
+	if uploader, _ := s.current(); uploader != nil {
+		s.bindings.Store(task.ID, uploader)
 	}
 	return imageTaskToPublic(task), nil
 }
@@ -184,14 +212,62 @@ func (s *ImageTaskService) Get(ctx context.Context, owner ImageTaskOwner, id str
 		// Do not reveal whether a random task ID exists for another caller.
 		return nil, ErrImageTaskNotFound
 	}
+	if time.Now().Unix() >= task.ExpiresAt {
+		return nil, ErrImageTaskNotFound
+	}
 	return imageTaskToPublic(task), nil
 }
 
+func (s *ImageTaskService) ReadAsset(ctx context.Context, owner ImageTaskOwner, id string) (io.ReadCloser, string, error) {
+	if s == nil || s.assets == nil {
+		return nil, "", ErrImageTaskNotFound
+	}
+	a, err := s.assets.Get(ctx, id)
+	if err != nil {
+		return nil, "", err
+	}
+	if _, err := s.Get(ctx, owner, a.TaskID); err != nil {
+		return nil, "", err
+	}
+	body, err := s.assets.Open(ctx, a)
+	return body, a.ContentType, err
+}
+
+type imageTaskLister interface {
+	List(context.Context, ImageTaskOwner, int) ([]*ImageTaskRecord, error)
+}
+
+func (s *ImageTaskService) List(ctx context.Context, owner ImageTaskOwner) ([]*ImageTask, error) {
+	lister, ok := s.store.(imageTaskLister)
+	if !ok {
+		return nil, ErrImageTaskUnavailable
+	}
+	rows, err := lister.List(ctx, owner, 50)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*ImageTask, 0, len(rows))
+	for _, row := range rows {
+		if row.UserID == owner.UserID && row.APIKeyID == owner.APIKeyID && row.ExpiresAt > time.Now().Unix() {
+			result = append(result, imageTaskToPublic(row))
+		}
+	}
+	return result, nil
+}
+
 func (s *ImageTaskService) Complete(ctx context.Context, id string, statusCode int, result json.RawMessage) error {
+	defer s.bindings.Delete(id)
 	if !json.Valid(result) {
 		return s.Fail(ctx, id, http.StatusBadGateway, imageTaskErrorJSON("api_error", "upstream returned a non-JSON image response"))
 	}
-	if uploader, _ := s.current(); uploader != nil {
+	uploader, _ := s.current()
+	if binding, ok := s.bindings.Load(id); ok {
+		uploader = binding.(*ImageResultUploader)
+	}
+	if s.resolve != nil && uploader == nil {
+		return s.Fail(ctx, id, http.StatusServiceUnavailable, imageTaskErrorJSON("api_error", "image storage is unavailable"))
+	}
+	if uploader != nil {
 		rewritten, err := uploader.Rewrite(ctx, id, result)
 		if err != nil {
 			// 转存失败不回退存 base64，避免大 blob 撑爆 Redis：直接把任务标记为失败。
@@ -204,6 +280,7 @@ func (s *ImageTaskService) Complete(ctx context.Context, id string, statusCode i
 }
 
 func (s *ImageTaskService) Fail(ctx context.Context, id string, statusCode int, taskErr json.RawMessage) error {
+	s.bindings.Delete(id)
 	if !json.Valid(taskErr) {
 		taskErr = imageTaskErrorJSON("api_error", "image generation failed")
 	}
@@ -251,6 +328,7 @@ func imageTaskToPublic(task *ImageTaskRecord) *ImageTask {
 		CreatedAt:   task.CreatedAt,
 		CompletedAt: task.CompletedAt,
 		ExpiresAt:   task.ExpiresAt,
+		Request:     task.Request,
 	}
 }
 

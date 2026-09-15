@@ -71,12 +71,27 @@
           </label>
         </div>
 
-        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+        <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div><label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.imageStorage.provider') }}</label>
+            <select v-model="imageStorageForm.provider" class="input w-full" @change="imageStorageForm.reuse_backup_s3 = false">
+              <option value="local">{{ t('admin.backup.imageStorage.local') }}</option>
+              <option value="qiniu">{{ t('admin.backup.imageStorage.qiniu') }}</option>
+              <option value="s3">S3 / R2 / MinIO</option>
+            </select>
+          </div>
+          <div v-if="imageStorageForm.provider === 'local'"><label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.imageStorage.localDirectory') }}</label><input v-model="imageStorageForm.local_directory" class="input w-full" placeholder="./data/generated-images" /></div>
+        </div>
+        <p class="mb-3 text-xs text-amber-600 dark:text-amber-400">{{ t('admin.backup.imageStorage.retention') }}</p>
+        <p v-if="imageStorageForm.provider === 'qiniu'" class="mb-3 text-xs text-gray-500">{{ t('admin.backup.imageStorage.qiniuHint') }} <a href="https://developer.qiniu.com/kodo/4088/s3-access-domainname"
+                                                                                                                                             target="_blank"
+                                                                                                                                             rel="noopener noreferrer"
+                                                                                                                                             class="text-primary-600 underline">{{ t('admin.backup.imageStorage.endpointGuide') }}</a></p>
+        <label v-if="imageStorageForm.provider === 's3'" class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
           <input v-model="imageStorageForm.reuse_backup_s3" type="checkbox" />
           <span>{{ t('admin.backup.imageStorage.reuseBackupS3') }}</span>
         </label>
 
-        <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div v-if="imageStorageForm.provider !== 'local'" class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.imageStorage.bucket') }}</label>
             <input v-model="imageStorageForm.bucket" class="input w-full" :placeholder="imageStorageForm.reuse_backup_s3 ? t('admin.backup.imageStorage.bucketInherited') : ''" />
@@ -89,7 +104,7 @@
           <template v-if="!imageStorageForm.reuse_backup_s3">
             <div>
               <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.endpoint') }}</label>
-              <input v-model="imageStorageForm.endpoint" class="input w-full" placeholder="https://<account_id>.r2.cloudflarestorage.com" />
+              <input v-model="imageStorageForm.endpoint" class="input w-full" :placeholder="imageStorageForm.provider === 'qiniu' ? 'https://s3.cn-east-1.qiniucs.com' : 'https://<account_id>.r2.cloudflarestorage.com'" />
             </div>
             <div>
               <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.region') }}</label>
@@ -101,7 +116,10 @@
             </div>
             <div>
               <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.secretAccessKey') }}</label>
-              <input v-model="imageStorageForm.secret_access_key" type="password" class="input w-full" :placeholder="imageStorageSecretConfigured ? t('admin.backup.s3.secretConfigured') : ''" />
+              <input v-model="imageStorageForm.secret_access_key"
+                     type="password"
+                     class="input w-full"
+                     :placeholder="imageStorageSecretConfigured ? t('admin.backup.s3.secretConfigured') : ''" />
             </div>
             <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
               <input v-model="imageStorageForm.force_path_style" type="checkbox" />
@@ -109,21 +127,19 @@
             </label>
           </template>
 
-          <div>
-            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.imageStorage.publicBaseUrl') }}</label>
-            <input v-model="imageStorageForm.public_base_url" class="input w-full" :placeholder="t('admin.backup.imageStorage.publicBaseUrlPlaceholder')" />
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.imageStorage.presignExpiryHours') }}</label>
-            <input v-model.number="imageStorageForm.presign_expiry_hours" type="number" min="1" class="input w-full" />
-          </div>
         </div>
 
         <div class="mt-4 flex flex-wrap gap-2">
-          <button type="button" class="btn btn-secondary btn-sm" :disabled="testingImageStorage" @click="testImageStorage">
+          <button type="button"
+                  class="btn btn-secondary btn-sm"
+                  :disabled="testingImageStorage"
+                  @click="testImageStorage">
             {{ testingImageStorage ? t('common.loading') : t('admin.backup.s3.testConnection') }}
           </button>
-          <button type="button" class="btn btn-primary btn-sm" :disabled="savingImageStorage" @click="saveImageStorageConfig">
+          <button type="button"
+                  class="btn btn-primary btn-sm"
+                  :disabled="savingImageStorage"
+                  @click="saveImageStorageConfig">
             {{ savingImageStorage ? t('common.loading') : t('common.save') }}
           </button>
         </div>
@@ -443,15 +459,16 @@ const s3SecretConfigured = ref(false)
 const savingS3 = ref(false)
 const testingS3 = ref(false)
 
-// Async image object storage. Shares the S3 client with backups, so the default is
-// to reuse the credentials configured above and only differ by prefix.
+// Image generation works with server storage before cloud credentials are configured.
 const imageStorageForm = ref<ImageStorageConfig>({
-  enabled: false,
-  reuse_backup_s3: true,
+  provider: 'local',
+  local_directory: './data/generated-images',
+  enabled: true,
+  reuse_backup_s3: false,
   bucket: '',
   prefix: 'images/',
   public_base_url: '',
-  presign_expiry_hours: 24,
+  presign_expiry_hours: 2,
   max_download_bytes: 33554432,
   endpoint: '',
   region: 'auto',
@@ -638,6 +655,8 @@ async function loadImageStorageConfig() {
     const { config, secret_configured } = await adminAPI.backup.getImageStorageConfig()
     imageStorageForm.value = {
       ...config,
+      provider: config.provider || 's3',
+      local_directory: config.local_directory || './data/generated-images',
       prefix: config.prefix || 'images/',
       region: config.region || 'auto',
       secret_access_key: '',

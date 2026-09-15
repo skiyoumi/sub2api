@@ -59,9 +59,9 @@ func (noopImageStorage) Save(context.Context, string, string, []byte) (string, e
 }
 
 // TestAsyncImageEnablesWithoutRestart drives the actual HTTP path for the bug behind
-// #4458 and #4542: with object storage unconfigured the async endpoint 404s, and the
-// only way to turn it on used to be editing config.yaml and restarting the container.
-// Flipping the admin setting must flip the endpoint over in the same process.
+// #4458 and #4542: flipping the explicit admin enablement setting must change
+// the endpoint in the same process. Empty cloud defaults now use local storage,
+// so this test starts with local storage explicitly disabled.
 func TestAsyncImageEnablesWithoutRestart(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -73,14 +73,14 @@ func TestAsyncImageEnablesWithoutRestart(t *testing.T) {
 	factory := func(context.Context, *config.ImageStorageConfig) (service.ImageStorage, error) {
 		return noopImageStorage{}, nil
 	}
-	settings := service.NewImageStorageSettingService(repo, passthroughEncryptor{}, backup, factory, config.ImageStorageConfig{})
+	settings := service.NewImageStorageSettingService(repo, passthroughEncryptor{}, backup, factory, config.ImageStorageConfig{Provider: "local", Enabled: false})
 
 	store := &asyncImageMemoryStore{tasks: make(map[string]*service.ImageTaskRecord)}
 	tasks := service.NewImageTaskServiceWithResolver(store, settings.Resolver(), time.Hour, time.Minute)
 
 	h := &AsyncImageHandler{tasks: tasks}
 	h.execute = func(_ string, c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"created": 1, "data": []gin.H{{"url": "https://upstream.test/i.png"}}})
+		c.JSON(http.StatusOK, gin.H{"created": 1, "data": []gin.H{{"b64_json": "iVBORw0KGgo="}}})
 	}
 
 	router := gin.New()
@@ -105,7 +105,7 @@ func TestAsyncImageEnablesWithoutRestart(t *testing.T) {
 	}
 
 	rec := submit()
-	require.Equal(t, http.StatusNotFound, rec.Code, "disabled until an admin configures object storage")
+	require.Equal(t, http.StatusNotFound, rec.Code, "explicitly disabled until an admin enables image storage")
 	require.Contains(t, rec.Body.String(), "async image tasks are not enabled")
 
 	// The admin saves the setting — no restart, same process.
@@ -126,7 +126,7 @@ func TestAsyncImageEnablesWithoutRestart(t *testing.T) {
 	require.NotEmpty(t, accepted.TaskID)
 
 	// Turning the feature back off must not strand a task that was already accepted.
-	_, err = settings.Update(context.Background(), service.ImageStorageSettings{Enabled: false})
+	_, err = settings.Update(context.Background(), service.ImageStorageSettings{Provider: "local", Enabled: false})
 	require.NoError(t, err)
 
 	require.Equal(t, http.StatusNotFound, submit().Code, "new submissions are refused again")

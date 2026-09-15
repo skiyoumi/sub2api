@@ -170,7 +170,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		// authentication, so keys with exhausted balance, expired keys, or
 		// quota-exhausted keys can still discover available models.
 		modelsMetadataRequest := isModelsMetadataRead(c.Request.Method, c.Request.URL.Path)
-		readOnlyInfoRequest := billingInfoRequest || modelsMetadataRequest
+		readOnlyInfoRequest := billingInfoRequest || modelsMetadataRequest || isAsyncImageTaskRead(c.Request.Method, c.Request.URL.Path)
 		// Async image task polling only reads data that already belongs to the
 		// authenticated key and must remain available after the completed
 		// generation consumes the key's remaining balance.
@@ -342,7 +342,9 @@ func isAsyncImageTaskRead(method, path string) bool {
 	if method != http.MethodGet {
 		return false
 	}
-	return strings.HasPrefix(path, "/v1/images/tasks/") || strings.HasPrefix(path, "/images/tasks/")
+	return path == "/v1/images/tasks" || path == "/images/tasks" ||
+		strings.HasPrefix(path, "/v1/images/tasks/") || strings.HasPrefix(path, "/images/tasks/") ||
+		strings.HasPrefix(path, "/v1/images/assets/") || strings.HasPrefix(path, "/images/assets/")
 }
 
 // isModelsMetadataRead reports whether the request is a read-only model

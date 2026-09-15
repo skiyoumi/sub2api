@@ -44,6 +44,9 @@ func TestOpenAIGatewayServiceForwardImages_OAuthUsesDecodedOutputDimensions(t *t
 
 	require.Equal(t, "3840x2160", gjson.GetBytes(run.upstream.lastBody, "tools.0.size").String())
 	require.Equal(t, "low", gjson.GetBytes(run.upstream.lastBody, "tools.0.quality").String())
+	require.Contains(t, gjson.GetBytes(run.upstream.lastBody, "instructions").String(), `"size":"3840x2160"`, "the Responses driver must receive the requested canvas, not just tool defaults")
+	require.Contains(t, gjson.GetBytes(run.upstream.lastBody, "instructions").String(), `"quality":"low"`)
+	require.Equal(t, "draw a test chart", gjson.GetBytes(run.upstream.lastBody, "input.0.content.0.text").String())
 	require.Equal(t, "1672x941", gjson.Get(run.recorder.Body.String(), "size").String())
 	require.Equal(t, "auto", gjson.Get(run.recorder.Body.String(), "quality").String())
 	require.Equal(t, []string{"1672x941"}, run.result.ImageOutputSizes)

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 // pngBytes is a minimal payload whose signature makes http.DetectContentType
@@ -70,6 +71,43 @@ func TestImageResultUploaderRewritesB64JSON(t *testing.T) {
 	_, hasB64 := parsed.Data[0]["b64_json"]
 	require.False(t, hasB64, "b64_json must be stripped after offload")
 	require.JSONEq(t, `"a cat"`, string(parsed.Data[0]["revised_prompt"]), "unrelated fields preserved")
+}
+
+func TestImageResultUploaderReportsActualDimensionsInsteadOfClaimed4K(t *testing.T) {
+	encoded := encodeOpenAIImageTestPNG(t, 1145, 1374)
+	original, err := base64.StdEncoding.DecodeString(encoded)
+	require.NoError(t, err)
+	storage := &fakeImageStorage{}
+	uploader := NewImageResultUploader(storage, "images/", 0, nil)
+	result := json.RawMessage(`{"size":"3840x2160","quality":"auto","data":[{"b64_json":"` + encoded + `","size":"3840x2160","width":3840,"height":2160}]}`)
+	out, err := uploader.Rewrite(context.Background(), "imgtask_dimensions", result)
+	require.NoError(t, err)
+	require.Equal(t, "1145x1374", gjson.GetBytes(out, "data.0.size").String())
+	require.Equal(t, int64(1145), gjson.GetBytes(out, "data.0.width").Int())
+	require.Equal(t, int64(1374), gjson.GetBytes(out, "data.0.height").Int())
+	require.Equal(t, "1145x1374", gjson.GetBytes(out, "size").String())
+	require.Equal(t, original, storage.saved[0].data, "storage must preserve the original image bytes")
+}
+
+func TestImageResultUploaderReportsEachDownloadedImageSize(t *testing.T) {
+	landscape, err := base64.StdEncoding.DecodeString(encodeOpenAIImageTestJPEG(t, 640, 360))
+	require.NoError(t, err)
+	portrait, err := base64.StdEncoding.DecodeString(encodeOpenAIImageTestWebPVP8X(600, 900))
+	require.NoError(t, err)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/landscape" {
+			_, _ = w.Write(landscape)
+		} else {
+			_, _ = w.Write(portrait)
+		}
+	}))
+	defer upstream.Close()
+	uploader := NewImageResultUploader(&fakeImageStorage{}, "images/", 0, upstream.Client())
+	out, err := uploader.Rewrite(context.Background(), "imgtask_sizes", json.RawMessage(`{"size":"3840x2160","data":[{"url":"`+upstream.URL+`/landscape"},{"url":"`+upstream.URL+`/portrait"}]}`))
+	require.NoError(t, err)
+	require.Equal(t, "640x360", gjson.GetBytes(out, "data.0.size").String())
+	require.Equal(t, "600x900", gjson.GetBytes(out, "data.1.size").String())
+	require.False(t, gjson.GetBytes(out, "size").Exists(), "mixed outputs must not claim a shared resolution")
 }
 
 func TestImageResultUploaderRewritesURL(t *testing.T) {
