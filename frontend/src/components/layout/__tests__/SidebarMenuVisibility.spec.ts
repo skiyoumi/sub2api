@@ -14,6 +14,7 @@ const appStore = reactive({
   cachedPublicSettings: {
     custom_menu_items: [] as CustomMenuItem[], sidebar_menu_order: {} as SidebarMenuOrder,
     channel_monitor_enabled: true, payment_enabled: true, available_channels_enabled: false,
+    subscription_enabled: true, payment_balance_disabled: false,
     affiliate_enabled: false, risk_control_enabled: false, plugin_management_enabled: false,
   },
 })
@@ -43,6 +44,7 @@ beforeEach(() => {
   appStore.cachedPublicSettings = {
     custom_menu_items: [{ id: 'cards', label: 'Custom user link', url: 'https://example.com', icon_svg: '', visibility: 'user', sort_order: 0 }],
     sidebar_menu_order: {}, channel_monitor_enabled: true, payment_enabled: true,
+    subscription_enabled: true, payment_balance_disabled: false,
     available_channels_enabled: false, affiliate_enabled: false,
     risk_control_enabled: false, plugin_management_enabled: false,
   }
@@ -84,6 +86,26 @@ function expectSameMenus(menus: Awaited<ReturnType<typeof mountMenus>>, section:
 }
 
 describe('sidebar and menu editor share actual menu visibility', () => {
+  it.each([
+    { subscription: true, balanceDisabled: false, label: 'nav.buySubscription' },
+    { subscription: false, balanceDisabled: false, label: 'nav.recharge' },
+    { subscription: true, balanceDisabled: true, label: 'nav.subscribe' },
+  ])('updates both menus for billing mode $label', async ({ subscription, balanceDisabled, label }) => {
+    const menus = await mountMenus()
+    Object.assign(appStore.cachedPublicSettings, {
+      subscription_enabled: subscription, payment_balance_disabled: balanceDisabled,
+    })
+    await flushPromises()
+    expect(menus.sidebar.find('a[href="/subscriptions"]').exists()).toBe(subscription)
+    expect(menus.sidebar.find('a[href="/admin/subscriptions"]').exists()).toBe(subscription)
+    expect(menus.sidebar.get('a[href="/purchase"] .sidebar-label .truncate').text()).toBe(label)
+    expect(menus.editor.find('[data-menu-path="/subscriptions"]').exists()).toBe(subscription)
+    expectSameMenus(menus, 'user')
+    await menus.editor.get('[data-sidebar-section="admin"]').trigger('click')
+    expect(menus.editor.find('[data-menu-path="/admin/subscriptions"]').exists()).toBe(subscription)
+    expectSameMenus(menus, 'admin')
+  })
+
   it.each([
     { name: 'standard admin', isAdmin: true, isSimpleMode: false, backendMode: false },
     { name: 'simple admin', isAdmin: true, isSimpleMode: true, backendMode: false },

@@ -26,9 +26,13 @@ vi.mock('@/stores', () => ({
   useAdminSettingsStore: () => adminSettingsStore,
   useOnboardingStore: () => ({ isCurrentStep: () => false }),
 }))
+vi.mock('@/stores/app', () => ({ useAppStore: () => appStore }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 vi.mock('@/components/common/VersionBadge.vue', () => ({ default: { template: '<span />' } }))
-vi.mock('@/utils/featureFlags', () => ({ FeatureFlags: {}, makeSidebarFlag: () => () => true }))
+vi.mock('@/utils/featureFlags', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/utils/featureFlags')>(),
+  makeSidebarFlag: () => () => true,
+}))
 vi.mock('@/composables/useBatchImageAccess', () => ({
   useBatchImageAccess: () => ({ canUseBatchImage: { value: false }, refreshBatchImageAccess: vi.fn() }),
 }))

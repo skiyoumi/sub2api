@@ -140,7 +140,10 @@ vi.mock("@/stores/adminSettings", () => ({
 vi.mock("@/composables/useBatchImageAccess", () => ({
   useBatchImageAccess: () => ({ canUseBatchImage: { value: false }, refreshBatchImageAccess: vi.fn() }),
 }));
-vi.mock("@/utils/featureFlags", () => ({ FeatureFlags: {}, makeSidebarFlag: () => () => true }));
+vi.mock("@/utils/featureFlags", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/utils/featureFlags")>(),
+  makeSidebarFlag: () => () => true,
+}));
 
 vi.mock("@/composables/useClipboard", () => ({
   useClipboard: () => ({
@@ -745,6 +748,31 @@ describe("admin SettingsView payment visible method controls", () => {
     await flushPromises();
     expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({
       custom_menu_items: [expect.objectContaining({ id: "cards", open_mode: nextMode })],
+    }));
+    wrapper.unmount();
+  });
+
+  it("loads and saves the open button visibility for each custom menu", async () => {
+    const menuItems = [
+      { id: "docs", label: "Docs", url: "https://example.com/docs", icon_svg: "", visibility: "user", sort_order: 0 },
+      { id: "help", label: "Help", url: "https://example.com/help", icon_svg: "", visibility: "user", sort_order: 1, hide_open_button: true },
+    ];
+    getSettings.mockResolvedValue({ ...baseSettingsResponse, custom_menu_items: menuItems });
+    const wrapper = mountView();
+    await flushPromises();
+
+    const toggles = wrapper.findAll<HTMLInputElement>('[data-testid="custom-menu-hide-open-button"]');
+    expect(toggles.map(toggle => toggle.element.checked)).toEqual([false, true]);
+    await toggles[0].setValue(true);
+    await toggles[1].setValue(false);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({
+      custom_menu_items: [
+        { ...menuItems[0], open_mode: "iframe", hide_open_button: true },
+        { ...menuItems[1], open_mode: "iframe", hide_open_button: false },
+      ],
     }));
     wrapper.unmount();
   });
