@@ -2,6 +2,7 @@ import { buildGatewayUrl } from './client'
 
 export interface StudioImage {
   url?: string
+  preview_url?: string
   revised_prompt?: string
   width?: number
   height?: number

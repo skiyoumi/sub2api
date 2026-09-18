@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 type assetMemoryRepo struct {
@@ -209,4 +211,52 @@ func TestImageAssetsRequireTaskOwnershipBeforeReadingBytes(t *testing.T) {
 	repo.records[id].ExpiresAt = time.Now().Add(-time.Second)
 	_, _, err = tasks.ReadAsset(ctx, owner, id)
 	require.ErrorIs(t, err, ErrImageTaskNotFound)
+}
+
+func TestImagePreviewAssetsShareTaskOwnershipAndRetention(t *testing.T) {
+	ctx := context.Background()
+	repo := newAssetMemoryRepo()
+	blob := &assetMemoryBlob{data: map[string][]byte{}}
+	assets := NewImageAssetService(repo, func(context.Context, *config.ImageStorageConfig) (ImageStorage, error) { return blob, nil }, reversibleEncryptor{})
+	tasks := NewImageTaskServiceWithOptions(&imageTaskMemoryStore{}, ImageRetention, time.Minute)
+	tasks.assets = assets
+	owner := ImageTaskOwner{UserID: 1, APIKeyID: 2}
+	task, err := tasks.Create(ctx, owner)
+	require.NoError(t, err)
+	storage, err := assets.Storage(&config.ImageStorageConfig{Prefix: "images/"}, blob)
+	require.NoError(t, err)
+	uploader := NewImageResultUploader(storage, "images/", 0, nil)
+	original := noisyImagePNG(t, 256, 256)
+	input, err := json.Marshal(map[string]any{"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString(original)}}})
+	require.NoError(t, err)
+	result, err := uploader.Rewrite(ctx, task.ID, input)
+	require.NoError(t, err)
+	require.Len(t, repo.records, 2)
+	for _, field := range []string{"url", "preview_url"} {
+		url := gjson.GetBytes(result, "data.0."+field).String()
+		require.True(t, strings.HasPrefix(url, "/v1/images/assets/"))
+		id := strings.TrimPrefix(url, "/v1/images/assets/")
+		require.Equal(t, task.ID, repo.records[id].TaskID)
+		require.WithinDuration(t, time.Now().Add(ImageRetention), repo.records[id].ExpiresAt, time.Second)
+		_, _, err := tasks.ReadAsset(ctx, ImageTaskOwner{UserID: 1, APIKeyID: 3}, id)
+		require.ErrorIs(t, err, ErrImageTaskNotFound)
+		body, ct, err := tasks.ReadAsset(ctx, owner, id)
+		require.NoError(t, err)
+		data, err := io.ReadAll(body)
+		require.NoError(t, body.Close())
+		require.NoError(t, err)
+		if field == "url" {
+			require.Equal(t, original, data)
+			require.Equal(t, "image/png", ct)
+		} else {
+			require.Less(t, len(data), len(original))
+			require.Equal(t, "image/jpeg", ct)
+		}
+		repo.records[id].ExpiresAt = time.Now().Add(-time.Second)
+		_, _, err = tasks.ReadAsset(ctx, owner, id)
+		require.ErrorIs(t, err, ErrImageTaskNotFound)
+	}
+	require.NoError(t, assets.Cleanup(ctx, time.Now()))
+	require.Empty(t, blob.data)
+	require.Empty(t, repo.records)
 }

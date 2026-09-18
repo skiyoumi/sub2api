@@ -21,7 +21,7 @@ export default {
     submittedSize: 'Requested dimensions', actualSize: 'Actual dimensions',
     capabilityHint: 'Options adapt to the selected model', generate: 'Generate images', submitting: 'Submitting', generating: 'Generating', generatingHint: 'Bringing your idea to life. You can leave this page and find the result in history later.',
     usingKey: 'Generate with “{name}”', results: 'Your creation', emptyTitle: 'Your next creation starts here', emptyHint: 'Write a description or use a prompt below. Your images will appear here.',
-    completed: 'Completed', failed: 'Generation failed', download: 'Download image', reuse: 'Use as reference', again: 'Generate again',
+    completed: 'Completed', failed: 'Generation failed', download: 'Download original', loadingOriginal: 'Downloading original…', reuse: 'Use as reference', again: 'Generate again',
     retention: 'Images and generation prompts are kept for 2 hours, then deleted together. Download or copy them in time.', expires: 'Expires in {minutes} min', expired: 'This image has expired. Please generate again.',
     history: 'History', historyHint: 'Creations from this key in the last 2 hours', noHistory: 'No creations yet. Try your first prompt.', back: 'Back to studio',
     plaza: 'Prompt inspiration', plazaHint: 'Apply a prompt while keeping your current key and model.', use: 'Use prompt', applied: 'Prompt applied', featured: 'Featured',

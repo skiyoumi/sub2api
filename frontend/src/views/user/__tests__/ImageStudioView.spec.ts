@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import ImageStudioView from '../ImageStudioView.vue'
 
-enableAutoUnmount(fn => afterEach(() => { fn(); vi.useRealTimers(); vi.unstubAllGlobals() }))
+enableAutoUnmount(fn => afterEach(() => { fn(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() }))
 const mocks = vi.hoisted(() => ({ keys: vi.fn(), models: vi.fn(), tasks: vi.fn(), submit: vi.fn(), image: vi.fn(), copy: vi.fn(), user: { id: 7 } }))
 vi.mock('@/api/keys', () => ({ keysAPI: { list: mocks.keys } }))
 vi.mock('@/api/client', () => ({ buildGatewayUrl: (path: string) => path }))
@@ -25,9 +25,146 @@ beforeEach(() => {
   mocks.keys.mockResolvedValue({ items: [1, 2].map(id => ({ id, key: `secret-${id}`, name: `key-${id}`, status: 'active', quota: 0, group: { name: `group-${id}`, platform: 'openai', allow_image_generation: true } })), pages: 1 })
   mocks.models.mockResolvedValue(['gpt-image-2'])
   mocks.tasks.mockResolvedValue({ data: [], enabled: true })
+  mocks.image.mockResolvedValue(new Blob(['original'], { type: 'image/png' }))
 })
 
+function previewTask() {
+  return { id: 'preview-task', status: 'completed', created_at: Date.now() / 1000, expires_at: Date.now() / 1000 + 7200,
+    request: { prompt: 'A landscape', model: 'gpt-image-2' },
+    result: { data: [{ url: '/v1/images/assets/original', preview_url: '/v1/images/assets/preview' }] } }
+}
+
 describe('ImageStudioView', () => {
+  it('loads only the small preview until download, retaining an in-flight download across polls', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    const original = new Blob(['full resolution original'], { type: 'image/png' })
+    const createURL = vi.fn((blob: Blob) => blob.type === 'image/jpeg' ? 'blob:preview' : 'blob:original')
+    vi.stubGlobal('URL', { createObjectURL: createURL, revokeObjectURL: vi.fn() })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    let finishOriginal!: (blob: Blob) => void
+    mocks.image.mockImplementation((_key: string, path: string) => path.endsWith('/preview')
+      ? Promise.resolve(new Blob(['small'], { type: 'image/jpeg' }))
+      : new Promise(resolve => { finishOriginal = resolve }))
+    // Polling returns fresh task objects, just as a real JSON response does.
+    mocks.tasks.mockImplementation(async () => ({ enabled: true, data: [previewTask()] }))
+    const wrapper = view()
+    await flushPromises()
+    await wrapper.get('#studio-key').setValue('1')
+    await flushPromises()
+    expect(wrapper.get('.preview img').attributes('src')).toBe('blob:preview')
+    expect(mocks.image).toHaveBeenCalledTimes(1)
+    expect(mocks.image).toHaveBeenLastCalledWith('secret-1', '/v1/images/assets/preview', expect.any(AbortSignal))
+    await wrapper.get('.result-actions .btn-primary').trigger('click')
+    expect(wrapper.get('.result-actions .btn-primary').text()).toContain('imageStudio.loadingOriginal')
+    expect(wrapper.get('.result-actions .btn-primary').attributes('disabled')).toBeDefined()
+    expect(mocks.image).toHaveBeenLastCalledWith('secret-1', '/v1/images/assets/original', expect.any(AbortSignal))
+    await vi.advanceTimersByTimeAsync(12000)
+    await flushPromises()
+    expect(mocks.image).toHaveBeenCalledTimes(2)
+    expect(mocks.image.mock.calls[1]![2].aborted).toBe(false)
+    finishOriginal(original)
+    await flushPromises()
+    expect(createURL).toHaveBeenCalledWith(original)
+    expect(click).toHaveBeenCalledTimes(1)
+    const link = click.mock.instances[0] as HTMLAnchorElement
+    expect(link.href).toBe('blob:original')
+    expect(link.download).toBe('preview-task-1.png')
+    await wrapper.get('.result-actions .btn-primary').trigger('click')
+    await flushPromises()
+    expect(mocks.image).toHaveBeenCalledTimes(2)
+    expect(click).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:preview')
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:original')
+  })
+
+  it('aborts and discards an old original download when changing keys', async () => {
+    vi.stubGlobal('URL', { createObjectURL: () => 'blob:preview', revokeObjectURL: vi.fn() })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    let finishOriginal!: (blob: Blob) => void
+    mocks.image.mockImplementation((_key: string, path: string) => path.endsWith('/preview')
+      ? Promise.resolve(new Blob(['small'], { type: 'image/jpeg' }))
+      : new Promise(resolve => { finishOriginal = resolve }))
+    mocks.tasks.mockImplementation(async (key: string) => ({ enabled: true, data: key === 'secret-1' ? [previewTask()] : [] }))
+    const wrapper = view()
+    await flushPromises()
+    await wrapper.get('#studio-key').setValue('1')
+    await flushPromises()
+    await wrapper.get('.result-actions .btn-primary').trigger('click')
+    const signal = mocks.image.mock.calls[1]![2] as AbortSignal
+    await wrapper.get('#studio-key').setValue('2')
+    await flushPromises()
+    expect(signal.aborted).toBe(true)
+    finishOriginal(new Blob(['old original'], { type: 'image/png' }))
+    await flushPromises()
+    expect(click).not.toHaveBeenCalled()
+    expect(wrapper.find('.preview img').exists()).toBe(false)
+  })
+
+  it('uses original bytes for a reference instead of the reduced preview', async () => {
+    vi.stubGlobal('URL', { createObjectURL: () => 'blob:preview', revokeObjectURL: vi.fn() })
+    const original = new Blob(['full resolution original'], { type: 'image/png' })
+    mocks.image.mockImplementation(async (_key: string, path: string) => path.endsWith('/preview') ? new Blob(['small'], { type: 'image/jpeg' }) : original)
+    mocks.tasks.mockResolvedValue({ enabled: true, data: [previewTask()] })
+    mocks.submit.mockResolvedValue({ id: 'next', status: 'processing', expires_at: Date.now() / 1000 + 7200 })
+    const wrapper = view()
+    await flushPromises()
+    await wrapper.get('#studio-key').setValue('1')
+    await flushPromises()
+    await wrapper.get('.result-actions .btn-secondary').trigger('click')
+    await flushPromises()
+    expect(mocks.image).toHaveBeenLastCalledWith('secret-1', '/v1/images/assets/original', expect.any(AbortSignal))
+    await wrapper.get('.generate-button').trigger('click')
+    await flushPromises()
+    const reference = mocks.submit.mock.calls[0]![1].reference as File
+    expect(reference.size).toBe(original.size)
+    expect(reference.type).toBe('image/png')
+  })
+
+  it('falls back to the original when the optional preview is unavailable', async () => {
+    vi.stubGlobal('URL', { createObjectURL: () => 'blob:original', revokeObjectURL: vi.fn() })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    mocks.image.mockImplementation(async (_key: string, path: string) => {
+      if (path.endsWith('/preview')) throw new Error('HTTP 404')
+      return new Blob(['original'], { type: 'image/png' })
+    })
+    mocks.tasks.mockResolvedValue({ enabled: true, data: [previewTask()] })
+    const wrapper = view()
+    await flushPromises()
+    await wrapper.get('#studio-key').setValue('1')
+    await flushPromises()
+    expect(wrapper.get('.preview img').attributes('src')).toBe('blob:original')
+    expect(wrapper.text()).not.toContain('HTTP 404')
+    await wrapper.get('.result-actions .btn-primary').trigger('click')
+    await flushPromises()
+    expect(mocks.image).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps a preview visible and allows retry after an original download fails', async () => {
+    vi.stubGlobal('URL', { createObjectURL: () => 'blob:preview', revokeObjectURL: vi.fn() })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    mocks.image.mockImplementation(async (_key: string, path: string) => {
+      if (path.endsWith('/original')) throw new Error('HTTP 503')
+      return new Blob(['small'], { type: 'image/jpeg' })
+    })
+    mocks.tasks.mockResolvedValue({ enabled: true, data: [previewTask()] })
+    const wrapper = view()
+    await flushPromises()
+    await wrapper.get('#studio-key').setValue('1')
+    await flushPromises()
+    await wrapper.get('.result-actions .btn-primary').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.preview img').attributes('src')).toBe('blob:preview')
+    expect(wrapper.text()).toContain('HTTP 503')
+    expect(wrapper.get('.result-actions .btn-primary').attributes('disabled')).toBeUndefined()
+    expect(click).not.toHaveBeenCalled()
+    mocks.image.mockResolvedValue(new Blob(['original'], { type: 'image/png' }))
+    await wrapper.get('.result-actions .btn-primary').trigger('click')
+    await flushPromises()
+    expect(click).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).not.toContain('HTTP 503')
+  })
+
   it('keeps the preview and saved prompt without result parameter comparisons', async () => {
     vi.stubGlobal('URL', { createObjectURL: () => 'blob:preview', revokeObjectURL: vi.fn() })
     mocks.image.mockResolvedValue(new Blob(['image'], { type: 'image/png' }))

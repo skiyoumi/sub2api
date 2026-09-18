@@ -266,9 +266,9 @@
               <div class="result-actions">
                 <span class="expiry">
                   <Icon name="clock" size="sm" />{{ t('imageStudio.expires', { minutes: remainingMinutes }) }}</span>
-                <button class="btn btn-secondary btn-sm" @click="reuseImage">{{ t('imageStudio.reuse') }}</button>
-                <button class="btn btn-primary btn-sm" @click="downloadImage">
-                  <Icon name="download" size="sm" />{{ t('imageStudio.download') }}
+                <button class="btn btn-secondary btn-sm" :disabled="!!originalAction" @click="reuseImage">{{ t(originalAction === 'reuse' ? 'common.loading' : 'imageStudio.reuse') }}</button>
+                <button class="btn btn-primary btn-sm" :disabled="!!originalAction" @click="downloadImage">
+                  <Icon name="download" size="sm" />{{ t(originalAction === 'download' ? 'imageStudio.loadingOriginal' : 'imageStudio.download') }}
                 </button>
               </div>
             </template>
@@ -387,7 +387,9 @@ const historyOpen = ref(false)
 const historyLoading = ref(false)
 const historyError = ref('')
 const imageURLs = ref<string[]>([])
-const imageBlobs = ref<Blob[]>([])
+const originalBlobs = new Map<number, Blob>()
+const originalURLs = new Map<number, string>()
+const originalAction = ref<'download' | 'reuse' | ''>('')
 const imageError = ref('')
 const loadingImages = ref(false)
 const now = ref(Date.now())
@@ -398,10 +400,12 @@ const selectedKey = computed(() => keys.value.find(key => String(key.id) === key
 const capabilities = computed(() => studioCapabilities(model.value))
 const visibleTasks = computed(() => tasks.value.filter(task => task.expires_at * 1000 > now.value))
 const activeTask = computed(() => visibleTasks.value.find(task => task.id === activeTaskID.value))
+const taskImages = computed(() => (activeTask.value?.result?.data || []).filter(image => !!image.url))
 const remainingMinutes = computed(() => Math.max(0, Math.ceil(((activeTask.value?.expires_at || 0) * 1000 - now.value) / 60000)))
 const canGenerate = computed(() => !!dimensions.value && !!selectedKey.value && selectedKey.value.status === 'active' && (!selectedKey.value.expires_at || Date.parse(selectedKey.value.expires_at) > now.value) && (!selectedKey.value.quota || selectedKey.value.quota_used < selectedKey.value.quota) && models.value.includes(model.value) && !!prompt.value.trim() && !loadingModels.value && !submitting.value && storageEnabled.value === true && (mode.value !== 'image' || !!reference.value))
 let bindingController: AbortController | undefined
 let imageController: AbortController | undefined
+let originalController: AbortController | undefined
 let bindingSequence = 0
 let imageSequence = 0
 let disposed = false
@@ -470,9 +474,13 @@ async function loadBinding() {
 function clearImages() {
   ++imageSequence
   imageController?.abort()
+  originalController?.abort()
   imageURLs.value.forEach(url => URL.revokeObjectURL(url))
+  originalURLs.forEach(url => URL.revokeObjectURL(url))
+  originalURLs.clear()
+  originalBlobs.clear()
+  originalAction.value = ''
   imageURLs.value = []
-  imageBlobs.value = []
   activeImage.value = 0
   imageError.value = ''
   loadingImages.value = false
@@ -484,14 +492,26 @@ async function loadImages() {
   const task = activeTask.value
   const key = selectedKey.value
   if (!key || task?.status !== 'completed') return
-  const paths = (task.result?.data || []).map(item => item.url).filter((url): url is string => !!url)
-  if (!paths.length) return
+  const images = taskImages.value
+  if (!images.length) return
   imageController = new AbortController()
+  const signal = imageController.signal
   loadingImages.value = true
   try {
-    const blobs = await Promise.all(paths.map(path => fetchStudioImage(key.key, path, imageController!.signal)))
+    const blobs = await Promise.all(images.map(async (image, index) => {
+      let original = !image.preview_url
+      let blob: Blob
+      try { blob = await fetchStudioImage(key.key, image.preview_url || image.url!, signal) }
+      catch (error) {
+        if (!image.preview_url || signal.aborted) throw error
+        // An unavailable optional preview must not hide a valid original.
+        blob = await fetchStudioImage(key.key, image.url!, signal)
+        original = true
+      }
+      if (original && sequence === imageSequence && !disposed) originalBlobs.set(index, blob)
+      return blob
+    }))
     if (disposed || sequence !== imageSequence || !activeTask.value) return
-    imageBlobs.value = blobs
     imageURLs.value = blobs.map(blob => URL.createObjectURL(blob))
   } catch (error) { if (sequence === imageSequence && !disposed) imageError.value = message(error) }
   finally { if (sequence === imageSequence) loadingImages.value = false }
@@ -578,12 +598,36 @@ function reuseTaskPrompt(task: StudioTask) {
   promptInput.value?.focus()
   app.showSuccess(t('imageStudio.applied'))
 }
-function downloadImage() {
-  if (!activeTask.value || !imageURLs.value[activeImage.value]) return
-  const ext = imageBlobs.value[activeImage.value]?.type.split('/')[1] || 'png'
-  const link = document.createElement('a'); link.href = imageURLs.value[activeImage.value]; link.download = `${activeTaskID.value}-${activeImage.value + 1}.${ext}`; link.click()
+async function useOriginalImage(action: 'download' | 'reuse') {
+  const task = activeTask.value
+  const key = selectedKey.value
+  const index = activeImage.value
+  const image = taskImages.value[index]
+  if (originalAction.value || !key || !task || task.expires_at * 1000 <= Date.now() || !image?.url) return
+  const sequence = imageSequence
+  originalAction.value = action
+  imageError.value = ''
+  originalController = new AbortController()
+  try {
+    const blob = originalBlobs.get(index) || await fetchStudioImage(key.key, image.url, originalController.signal)
+    if (disposed || sequence !== imageSequence || task.expires_at * 1000 <= Date.now()) return
+    originalBlobs.set(index, blob)
+    const ext = blob.type.split('/')[1] || 'png'
+    if (action === 'reuse') {
+      setReference(new File([blob], `reference.${ext}`, { type: blob.type }))
+    } else {
+      let url = originalURLs.get(index)
+      if (!url) { url = URL.createObjectURL(blob); originalURLs.set(index, url) }
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${task.id}-${index + 1}.${ext}`
+      link.click()
+    }
+  } catch (error) { if (sequence === imageSequence && !disposed) imageError.value = message(error) }
+  finally { if (sequence === imageSequence) originalAction.value = '' }
 }
-function reuseImage() { const blob = imageBlobs.value[activeImage.value]; if (blob && activeTask.value) setReference(new File([blob], `reference.${blob.type.split('/')[1] || 'png'}`, { type: blob.type })) }
+function downloadImage() { void useOriginalImage('download') }
+function reuseImage() { void useOriginalImage('reuse') }
 function closeSettings(event: MouseEvent) { if (!settingsRoot.value?.contains(event.target as Node)) settingsOpen.value = false }
 
 watch(keyID, loadBinding)

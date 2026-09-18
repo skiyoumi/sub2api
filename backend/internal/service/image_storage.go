@@ -12,6 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"go.uber.org/zap"
 )
 
 const defaultImageMaxDownloadBytes int64 = 32 << 20 // 32 MiB
@@ -98,6 +101,18 @@ func (u *ImageResultUploader) Rewrite(ctx context.Context, taskID string, result
 		}
 		item["url"] = urlRaw
 		delete(item, "b64_json")
+		// Only expose previews generated and stored by us, never upstream URLs.
+		delete(item, "preview_url")
+		if preview, previewErr := buildImagePreview(ctx, data); previewErr == nil && len(preview) < len(data) {
+			// Keep the task ID before the final '-' for retainedImageStorage.
+			previewKey := u.prefix + taskID + "-preview" + strconv.Itoa(i) + ".jpg"
+			if previewURL, saveErr := u.storage.Save(ctx, previewKey, "image/jpeg", preview); saveErr == nil {
+				item["preview_url"], _ = json.Marshal(previewURL)
+			} else {
+				// The original is already durable. A preview outage must not discard it.
+				logger.L().Warn("image_task.preview_store_failed", zap.String("task_id", taskID), zap.Error(saveErr))
+			}
+		}
 		// The returned bytes are authoritative, even when an upstream repeats the
 		// requested size or normalizes controls to auto. Never resize the artwork.
 		delete(item, "size")

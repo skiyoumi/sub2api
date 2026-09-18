@@ -21,7 +21,7 @@ export default {
     submittedSize: '本次请求尺寸', actualSize: '图片实际尺寸',
     capabilityHint: '参数随模型能力调整', generate: '生成图片', submitting: '正在提交', generating: '正在生成', generatingHint: '正在把你的灵感变成画面，可以离开页面，稍后从历史作品查看。',
     usingKey: '使用「{name}」密钥生成', results: '生成结果', emptyTitle: '下一张作品，从你的想象开始', emptyHint: '写下描述，或选用下方提示词。生成后将在这里预览。',
-    completed: '已完成', failed: '生成失败', download: '下载图片', reuse: '用作参考图', again: '再次生成',
+    completed: '已完成', failed: '生成失败', download: '下载原图', loadingOriginal: '正在下载原图…', reuse: '用作参考图', again: '再次生成',
     retention: '图片与生成提示词仅保留 2 小时，到期一同删除，请及时下载或复制。', expires: '{minutes} 分钟后过期', expired: '图片已过期，请重新生成。',
     history: '历史作品', historyHint: '当前密钥最近 2 小时的作品', noHistory: '还没有作品，开始第一次创作吧', back: '返回创作',
     plaza: '提示词广场', plazaHint: '点击卡片填入提示词，保留当前密钥与模型。', use: '一键使用', applied: '已填入提示词', featured: '精选',
