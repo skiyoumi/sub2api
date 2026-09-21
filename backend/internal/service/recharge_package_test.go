@@ -66,7 +66,7 @@ func TestResolveRechargePackageUsesServerAmounts(t *testing.T) {
 			BonusValidityDays: 7, Enabled: true,
 		}},
 	}
-	selection, err := ResolveRechargePackage(cfg, "pkg_30", 30)
+	selection, err := ResolveRechargePackage(cfg, &User{}, "pkg_30", 30)
 	require.NoError(t, err)
 	require.Equal(t, "36", selection.PermanentAmount.String())
 	require.Equal(t, "1.5", selection.BonusAmount.String())
@@ -85,10 +85,46 @@ func TestResolveRechargePackageRejectsClientAndConfigurationDrift(t *testing.T) 
 		BalanceRechargeMultiplier: 1,
 		RechargePackages:          []RechargePackage{{ID: "pkg_10", Amount: "10.00", BonusAmount: "1", BonusValidityDays: 1, Enabled: true}},
 	}
-	_, err := ResolveRechargePackage(cfg, "", 10)
+	_, err := ResolveRechargePackage(cfg, &User{}, "", 10)
 	require.ErrorContains(t, err, "custom recharge amount is disabled")
-	_, err = ResolveRechargePackage(cfg, "pkg_10", 9)
+	_, err = ResolveRechargePackage(cfg, &User{}, "pkg_10", 9)
 	require.ErrorContains(t, err, "recharge package has changed")
-	_, err = ResolveRechargePackage(cfg, "missing", 10)
+	_, err = ResolveRechargePackage(cfg, &User{}, "missing", 10)
 	require.ErrorContains(t, err, "recharge package not found")
+}
+
+func TestResolveRechargePackageExcludesBonusForRestrictedUser(t *testing.T) {
+	cfg := &PaymentConfig{
+		RechargePackagesEnabled: true, AllowCustomRecharge: true, BalanceRechargeMultiplier: 1.2,
+		RechargePackages: []RechargePackage{{ID: "pkg_30", Amount: "30.00", BonusAmount: "5", BonusValidityDays: 7, Enabled: true}},
+	}
+	user := &User{RechargeBonusDisabled: true, Balance: 100}
+	selection, err := ResolveRechargePackage(cfg, user, "pkg_30", 30)
+	require.NoError(t, err)
+	require.Equal(t, "30", selection.BaseAmount.String())
+	require.Equal(t, "36", selection.PermanentAmount.String())
+	require.Equal(t, "36", selection.CreditedAmount.String())
+	require.True(t, selection.BonusAmount.IsZero())
+	require.Zero(t, selection.Package.BonusValidityDays)
+	require.Equal(t, float64(100), user.Balance)
+	require.Equal(t, "5", cfg.RechargePackages[0].BonusAmount, "shared package settings must remain unchanged")
+
+	// Fulfillment reads this snapshot, so changing eligibility later must not add a bonus.
+	restored, err := RechargePackageSelectionFromProviderSnapshot(map[string]any{"_recharge_package": selection.Snapshot()})
+	require.NoError(t, err)
+	require.True(t, restored.BonusAmount.IsZero())
+	require.Equal(t, "36", restored.CreditedAmount.String())
+
+	eligible, err := ResolveRechargePackage(cfg, &User{}, "pkg_30", 30)
+	require.NoError(t, err)
+	require.Equal(t, "41", eligible.CreditedAmount.String())
+	require.NotEqual(t, selection.ConfigHash, eligible.ConfigHash)
+	// Old orders keep their snapshotted bonus even if their owner is subsequently excluded.
+	oldOrder, err := RechargePackageSelectionFromProviderSnapshot(map[string]any{"_recharge_package": eligible.Snapshot()})
+	require.NoError(t, err)
+	require.Equal(t, "5", oldOrder.BonusAmount.String())
+
+	custom, err := ResolveRechargePackage(cfg, user, "", 30)
+	require.NoError(t, err)
+	require.Nil(t, custom, "custom recharge remains available")
 }

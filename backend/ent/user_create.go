@@ -284,6 +284,20 @@ func (_c *UserCreate) SetNillableRestrictPublicGroups(v *bool) *UserCreate {
 	return _c
 }
 
+// SetRechargeBonusDisabled sets the "recharge_bonus_disabled" field.
+func (_c *UserCreate) SetRechargeBonusDisabled(v bool) *UserCreate {
+	_c.mutation.SetRechargeBonusDisabled(v)
+	return _c
+}
+
+// SetNillableRechargeBonusDisabled sets the "recharge_bonus_disabled" field if the given value is not nil.
+func (_c *UserCreate) SetNillableRechargeBonusDisabled(v *bool) *UserCreate {
+	if v != nil {
+		_c.SetRechargeBonusDisabled(*v)
+	}
+	return _c
+}
+
 // SetBalanceNotifyEnabled sets the "balance_notify_enabled" field.
 func (_c *UserCreate) SetBalanceNotifyEnabled(v bool) *UserCreate {
 	_c.mutation.SetBalanceNotifyEnabled(v)
@@ -654,6 +668,10 @@ func (_c *UserCreate) defaults() error {
 		v := user.DefaultRestrictPublicGroups
 		_c.mutation.SetRestrictPublicGroups(v)
 	}
+	if _, ok := _c.mutation.RechargeBonusDisabled(); !ok {
+		v := user.DefaultRechargeBonusDisabled
+		_c.mutation.SetRechargeBonusDisabled(v)
+	}
 	if _, ok := _c.mutation.BalanceNotifyEnabled(); !ok {
 		v := user.DefaultBalanceNotifyEnabled
 		_c.mutation.SetBalanceNotifyEnabled(v)
@@ -750,6 +768,9 @@ func (_c *UserCreate) check() error {
 	}
 	if _, ok := _c.mutation.RestrictPublicGroups(); !ok {
 		return &ValidationError{Name: "restrict_public_groups", err: errors.New(`ent: missing required field "User.restrict_public_groups"`)}
+	}
+	if _, ok := _c.mutation.RechargeBonusDisabled(); !ok {
+		return &ValidationError{Name: "recharge_bonus_disabled", err: errors.New(`ent: missing required field "User.recharge_bonus_disabled"`)}
 	}
 	if _, ok := _c.mutation.BalanceNotifyEnabled(); !ok {
 		return &ValidationError{Name: "balance_notify_enabled", err: errors.New(`ent: missing required field "User.balance_notify_enabled"`)}
@@ -868,6 +889,10 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.RestrictPublicGroups(); ok {
 		_spec.SetField(user.FieldRestrictPublicGroups, field.TypeBool, value)
 		_node.RestrictPublicGroups = value
+	}
+	if value, ok := _c.mutation.RechargeBonusDisabled(); ok {
+		_spec.SetField(user.FieldRechargeBonusDisabled, field.TypeBool, value)
+		_node.RechargeBonusDisabled = value
 	}
 	if value, ok := _c.mutation.BalanceNotifyEnabled(); ok {
 		_spec.SetField(user.FieldBalanceNotifyEnabled, field.TypeBool, value)
@@ -1421,6 +1446,18 @@ func (u *UserUpsert) UpdateRestrictPublicGroups() *UserUpsert {
 	return u
 }
 
+// SetRechargeBonusDisabled sets the "recharge_bonus_disabled" field.
+func (u *UserUpsert) SetRechargeBonusDisabled(v bool) *UserUpsert {
+	u.Set(user.FieldRechargeBonusDisabled, v)
+	return u
+}
+
+// UpdateRechargeBonusDisabled sets the "recharge_bonus_disabled" field to the value that was provided on create.
+func (u *UserUpsert) UpdateRechargeBonusDisabled() *UserUpsert {
+	u.SetExcluded(user.FieldRechargeBonusDisabled)
+	return u
+}
+
 // SetBalanceNotifyEnabled sets the "balance_notify_enabled" field.
 func (u *UserUpsert) SetBalanceNotifyEnabled(v bool) *UserUpsert {
 	u.Set(user.FieldBalanceNotifyEnabled, v)
@@ -1867,6 +1904,20 @@ func (u *UserUpsertOne) SetRestrictPublicGroups(v bool) *UserUpsertOne {
 func (u *UserUpsertOne) UpdateRestrictPublicGroups() *UserUpsertOne {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateRestrictPublicGroups()
+	})
+}
+
+// SetRechargeBonusDisabled sets the "recharge_bonus_disabled" field.
+func (u *UserUpsertOne) SetRechargeBonusDisabled(v bool) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetRechargeBonusDisabled(v)
+	})
+}
+
+// UpdateRechargeBonusDisabled sets the "recharge_bonus_disabled" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateRechargeBonusDisabled() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateRechargeBonusDisabled()
 	})
 }
 
@@ -2498,6 +2549,20 @@ func (u *UserUpsertBulk) SetRestrictPublicGroups(v bool) *UserUpsertBulk {
 func (u *UserUpsertBulk) UpdateRestrictPublicGroups() *UserUpsertBulk {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateRestrictPublicGroups()
+	})
+}
+
+// SetRechargeBonusDisabled sets the "recharge_bonus_disabled" field.
+func (u *UserUpsertBulk) SetRechargeBonusDisabled(v bool) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetRechargeBonusDisabled(v)
+	})
+}
+
+// UpdateRechargeBonusDisabled sets the "recharge_bonus_disabled" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateRechargeBonusDisabled() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateRechargeBonusDisabled()
 	})
 }
 

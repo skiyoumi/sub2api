@@ -23,6 +23,7 @@ type stubAdminService struct {
 	redeems                             []service.RedeemCode
 	boundAuthIdentity                   *service.AdminBindAuthIdentityInput
 	boundAuthIdentityFor                int64
+	lastUpdateUserInput                 *service.UpdateUserInput
 	createdAccounts                     []*service.CreateAccountInput
 	createdGroups                       []*service.CreateGroupInput
 	updatedGroups                       []*service.UpdateGroupInput
@@ -187,7 +188,11 @@ func (s *stubAdminService) CreateUser(ctx context.Context, input *service.Create
 }
 
 func (s *stubAdminService) UpdateUser(ctx context.Context, id int64, input *service.UpdateUserInput) (*service.User, error) {
+	s.lastUpdateUserInput = input
 	user := service.User{ID: id, Email: "updated@example.com", Status: service.StatusActive}
+	if input.RechargeBonusDisabled != nil {
+		user.RechargeBonusDisabled = *input.RechargeBonusDisabled
+	}
 	return &user, nil
 }
 

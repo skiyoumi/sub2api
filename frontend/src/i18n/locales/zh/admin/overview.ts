@@ -470,6 +470,8 @@ export default {
         failed: '批量更新用户限制失败'
       },
       editUser: '编辑用户',
+      rechargeBonusDisabled: '禁止充值套餐赠送',
+      rechargeBonusDisabledHint: '开启后，该用户新建充值订单不享受套餐赠送。已有余额、已创建订单和后台手动赠送不受影响。',
       deleteUser: '删除用户',
       deleteConfirmMessage: "确定要删除用户 '{email}' 吗？此操作无法撤销。",
       searchPlaceholder: '邮箱/用户名/备注/API Key 模糊搜索...',

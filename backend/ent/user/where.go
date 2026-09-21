@@ -150,6 +150,11 @@ func RestrictPublicGroups(v bool) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldRestrictPublicGroups, v))
 }
 
+// RechargeBonusDisabled applies equality check predicate on the "recharge_bonus_disabled" field. It's identical to RechargeBonusDisabledEQ.
+func RechargeBonusDisabled(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldRechargeBonusDisabled, v))
+}
+
 // BalanceNotifyEnabled applies equality check predicate on the "balance_notify_enabled" field. It's identical to BalanceNotifyEnabledEQ.
 func BalanceNotifyEnabled(v bool) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldBalanceNotifyEnabled, v))
@@ -1128,6 +1133,16 @@ func RestrictPublicGroupsEQ(v bool) predicate.User {
 // RestrictPublicGroupsNEQ applies the NEQ predicate on the "restrict_public_groups" field.
 func RestrictPublicGroupsNEQ(v bool) predicate.User {
 	return predicate.User(sql.FieldNEQ(FieldRestrictPublicGroups, v))
+}
+
+// RechargeBonusDisabledEQ applies the EQ predicate on the "recharge_bonus_disabled" field.
+func RechargeBonusDisabledEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldRechargeBonusDisabled, v))
+}
+
+// RechargeBonusDisabledNEQ applies the NEQ predicate on the "recharge_bonus_disabled" field.
+func RechargeBonusDisabledNEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldRechargeBonusDisabled, v))
 }
 
 // BalanceNotifyEnabledEQ applies the EQ predicate on the "balance_notify_enabled" field.

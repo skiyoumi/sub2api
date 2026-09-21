@@ -34,10 +34,10 @@ vi.mock('vue-i18n', async (importOriginal) => ({
   })
 }))
 
-const mountModal = (concurrency: number) => mount(UserEditModal, {
+const mountModal = (concurrency: number, rechargeBonusDisabled = false) => mount(UserEditModal, {
   props: {
     show: true,
-    user: { id: 7, email: 'user@example.test', username: 'user', notes: '', role: 'user', concurrency, rpm_limit: 0 } as never
+    user: { id: 7, email: 'user@example.test', username: 'user', notes: '', role: 'user', concurrency, rpm_limit: 0, recharge_bonus_disabled: rechargeBonusDisabled } as never
   },
   global: {
     stubs: {
@@ -86,5 +86,16 @@ describe('UserEditModal concurrency', () => {
 
     expect(showError).toHaveBeenCalledWith('admin.users.concurrencyNonNegative')
     expect(update).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])('loads and changes recharge bonus exclusion from %s', async (disabled) => {
+    const wrapper = mountModal(3, disabled)
+    const checkbox = wrapper.get('[data-test="recharge-bonus-disabled"]')
+    expect((checkbox.element as HTMLInputElement).checked).toBe(disabled)
+    await checkbox.setValue(!disabled)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(update).toHaveBeenCalledWith(7, expect.objectContaining({ recharge_bonus_disabled: !disabled }))
+    expect(wrapper.emitted('success')).toBeTruthy()
   })
 })

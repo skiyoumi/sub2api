@@ -287,6 +287,10 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 		user.RestrictPublicGroups = *input.RestrictPublicGroups
 		fields.RestrictPublicGroups = true
 	}
+	if input.RechargeBonusDisabled != nil {
+		user.RechargeBonusDisabled = *input.RechargeBonusDisabled
+		fields.RechargeBonusDisabled = true
+	}
 
 	if err := s.userRepo.Update(ctx, user, fields); err != nil {
 		return nil, err

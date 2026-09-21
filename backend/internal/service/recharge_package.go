@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -40,7 +41,28 @@ type RechargePackageSelection struct {
 	ConfigHash      string
 }
 
-func ResolveRechargePackage(cfg *PaymentConfig, packageID string, requestedAmount float64) (*RechargePackageSelection, error) {
+// forUser returns a copy so per-user eligibility never mutates cached settings.
+func (p RechargePackage) forUser(user *User) RechargePackage {
+	if user.RechargeBonusDisabled {
+		p.BonusAmount = "0"
+		p.BonusValidityDays = 0
+	}
+	return p
+}
+
+func (s *PaymentService) GetRechargePackagesForUser(ctx context.Context, userID int64, packages []RechargePackage) ([]RechargePackage, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get recharge bonus eligibility: %w", err)
+	}
+	result := make([]RechargePackage, len(packages))
+	for i, p := range packages {
+		result[i] = p.forUser(user)
+	}
+	return result, nil
+}
+
+func ResolveRechargePackage(cfg *PaymentConfig, user *User, packageID string, requestedAmount float64) (*RechargePackageSelection, error) {
 	packageID = strings.TrimSpace(packageID)
 	if packageID == "" {
 		if cfg != nil && cfg.RechargePackagesEnabled && !cfg.AllowCustomRecharge {
@@ -68,12 +90,13 @@ func ResolveRechargePackage(cfg *PaymentConfig, packageID string, requestedAmoun
 	if !decimal.NewFromFloat(requestedAmount).Equal(base) {
 		return nil, infraerrors.Conflict("RECHARGE_PACKAGE_CHANGED", "recharge package has changed")
 	}
-	bonus, _ := decimal.NewFromString(selected.BonusAmount)
+	offer := selected.forUser(user)
+	bonus, _ := decimal.NewFromString(offer.BonusAmount)
 	permanent := base.Mul(decimal.NewFromFloat(normalizeBalanceRechargeMultiplier(cfg.BalanceRechargeMultiplier))).Round(2)
-	encoded, _ := json.Marshal(selected)
+	encoded, _ := json.Marshal(offer)
 	hash := fmt.Sprintf("%x", sha256.Sum256(encoded))
 	return &RechargePackageSelection{
-		Package: *selected, BaseAmount: base, PermanentAmount: permanent,
+		Package: offer, BaseAmount: base, PermanentAmount: permanent,
 		BonusAmount: bonus, CreditedAmount: permanent.Add(bonus), ConfigHash: hash,
 	}, nil
 }

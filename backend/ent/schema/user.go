@@ -100,6 +100,9 @@ func (User) Fields() []ent.Field {
 		// 为 true 时仅可绑定 user_allowed_groups 中列出的公开分组。
 		field.Bool("restrict_public_groups").
 			Default(false),
+		// Applies to new recharge package orders; existing bonus balances are retained.
+		field.Bool("recharge_bonus_disabled").
+			Default(false),
 
 		// 余额不足通知
 		field.Bool("balance_notify_enabled").

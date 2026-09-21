@@ -33,11 +33,21 @@ func NewPaymentHandler(paymentService *service.PaymentService, configService *se
 // GetPaymentConfig returns the payment system configuration.
 // GET /api/v1/payment/config
 func (h *PaymentHandler) GetPaymentConfig(c *gin.Context) {
+	subject, ok := requireAuth(c)
+	if !ok {
+		return
+	}
 	cfg, err := h.configService.GetPaymentConfig(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
+	packages, err := h.paymentService.GetRechargePackagesForUser(c.Request.Context(), subject.UserID, cfg.RechargePackages)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	cfg.RechargePackages = packages
 	response.Success(c, cfg)
 }
 
@@ -118,6 +128,11 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	packages, err := h.paymentService.GetRechargePackagesForUser(ctx, subject.UserID, cfg.RechargePackages)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	alipayMobilePrecreateDeepLink := false
 	if cfg.AlipayMobilePrecreateDeepLink {
 		alipayMobilePrecreateDeepLink, err = h.configService.UsesOfficialAlipayVisibleMethod(ctx)
@@ -150,48 +165,48 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 	}
 
 	response.Success(c, checkoutInfoResponse{
-		Methods:                   limitsResp.Methods,
-		GlobalMin:                 limitsResp.GlobalMin,
-		GlobalMax:                 limitsResp.GlobalMax,
-		Plans:                     planList,
-		BalanceDisabled:           cfg.BalanceDisabled,
-		BalanceRechargeMultiplier: cfg.BalanceRechargeMultiplier,
-		SubscriptionUSDToCNYRate:  cfg.SubscriptionUSDToCNYRate,
-		RechargeFeeRate:           cfg.RechargeFeeRate,
-		HelpText:                  cfg.HelpText,
-		HelpImageURL:              cfg.HelpImageURL,
-		StripePublishableKey:      cfg.StripePublishableKey,
-		AlipayForceQRCode:         cfg.AlipayForceQRCode,
+		Methods:                       limitsResp.Methods,
+		GlobalMin:                     limitsResp.GlobalMin,
+		GlobalMax:                     limitsResp.GlobalMax,
+		Plans:                         planList,
+		BalanceDisabled:               cfg.BalanceDisabled,
+		BalanceRechargeMultiplier:     cfg.BalanceRechargeMultiplier,
+		SubscriptionUSDToCNYRate:      cfg.SubscriptionUSDToCNYRate,
+		RechargeFeeRate:               cfg.RechargeFeeRate,
+		HelpText:                      cfg.HelpText,
+		HelpImageURL:                  cfg.HelpImageURL,
+		StripePublishableKey:          cfg.StripePublishableKey,
+		AlipayForceQRCode:             cfg.AlipayForceQRCode,
 		AlipayMobilePrecreateDeepLink: alipayMobilePrecreateDeepLink,
-		RechargePackagesEnabled:   cfg.RechargePackagesEnabled,
-        AllowCustomAmount:         cfg.AllowCustomRecharge,
-        RechargePackages:          enabledCheckoutRechargePackages(cfg.RechargePackages),
-        BonusBalance:              bonusSummary.Balance.InexactFloat64(),
-        NearestBonusExpiry:        bonusSummary.NearestExpiry,
-        NearestBonusExpiryAmount:  bonusSummary.NearestExpiryAmount.InexactFloat64(),
+		RechargePackagesEnabled:       cfg.RechargePackagesEnabled,
+		AllowCustomAmount:             cfg.AllowCustomRecharge,
+		RechargePackages:              enabledCheckoutRechargePackages(packages),
+		BonusBalance:                  bonusSummary.Balance.InexactFloat64(),
+		NearestBonusExpiry:            bonusSummary.NearestExpiry,
+		NearestBonusExpiryAmount:      bonusSummary.NearestExpiryAmount.InexactFloat64(),
 	})
 }
 
 type checkoutInfoResponse struct {
-	Methods                   map[string]service.MethodLimits `json:"methods"`
-	GlobalMin                 float64                         `json:"global_min"`
-	GlobalMax                 float64                         `json:"global_max"`
-	Plans                     []checkoutPlan                  `json:"plans"`
-	BalanceDisabled           bool                            `json:"balance_disabled"`
-	BalanceRechargeMultiplier float64                         `json:"balance_recharge_multiplier"`
-	SubscriptionUSDToCNYRate  float64                         `json:"subscription_usd_to_cny_rate"`
-	RechargeFeeRate           float64                         `json:"recharge_fee_rate"`
-	HelpText                  string                          `json:"help_text"`
-	HelpImageURL              string                          `json:"help_image_url"`
-	StripePublishableKey      string                          `json:"stripe_publishable_key"`
-	AlipayForceQRCode         bool                            `json:"alipay_force_qrcode"`
-	AlipayMobilePrecreateDeepLink bool                        `json:"alipay_mobile_precreate_deep_link"`
-	RechargePackagesEnabled   bool                            `json:"recharge_packages_enabled"`
-	AllowCustomAmount         bool                            `json:"allow_custom_amount"`
-	RechargePackages          []checkoutRechargePackage       `json:"recharge_packages"`
-	BonusBalance              float64                         `json:"bonus_balance"`
-	NearestBonusExpiry        *time.Time                      `json:"nearest_bonus_expiry"`
-	NearestBonusExpiryAmount  float64                         `json:"nearest_bonus_expiry_amount"`
+	Methods                       map[string]service.MethodLimits `json:"methods"`
+	GlobalMin                     float64                         `json:"global_min"`
+	GlobalMax                     float64                         `json:"global_max"`
+	Plans                         []checkoutPlan                  `json:"plans"`
+	BalanceDisabled               bool                            `json:"balance_disabled"`
+	BalanceRechargeMultiplier     float64                         `json:"balance_recharge_multiplier"`
+	SubscriptionUSDToCNYRate      float64                         `json:"subscription_usd_to_cny_rate"`
+	RechargeFeeRate               float64                         `json:"recharge_fee_rate"`
+	HelpText                      string                          `json:"help_text"`
+	HelpImageURL                  string                          `json:"help_image_url"`
+	StripePublishableKey          string                          `json:"stripe_publishable_key"`
+	AlipayForceQRCode             bool                            `json:"alipay_force_qrcode"`
+	AlipayMobilePrecreateDeepLink bool                            `json:"alipay_mobile_precreate_deep_link"`
+	RechargePackagesEnabled       bool                            `json:"recharge_packages_enabled"`
+	AllowCustomAmount             bool                            `json:"allow_custom_amount"`
+	RechargePackages              []checkoutRechargePackage       `json:"recharge_packages"`
+	BonusBalance                  float64                         `json:"bonus_balance"`
+	NearestBonusExpiry            *time.Time                      `json:"nearest_bonus_expiry"`
+	NearestBonusExpiryAmount      float64                         `json:"nearest_bonus_expiry_amount"`
 }
 
 type checkoutRechargePackage struct {

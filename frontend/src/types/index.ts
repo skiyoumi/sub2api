@@ -110,6 +110,7 @@ export interface AdminUser extends User {
   // 为 true 时该用户仅可使用 allowed_groups 中列出的公开分组。
   // 管理侧权限开关，普通用户接口不返回。
   restrict_public_groups?: boolean
+  recharge_bonus_disabled?: boolean
   // 当前并发数（仅管理员列表接口返回）
   current_concurrency?: number
 }
@@ -2056,6 +2057,7 @@ export interface UpdateUserRequest {
   status?: 'active' | 'disabled'
   allowed_groups?: number[] | null
   restrict_public_groups?: boolean
+  recharge_bonus_disabled?: boolean
   // 用户专属分组倍率配置 (group_id -> rate_multiplier | null)
   // null 表示删除该分组的专属倍率
   group_rates?: Record<number, number | null>

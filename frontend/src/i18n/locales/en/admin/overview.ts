@@ -470,6 +470,8 @@ export default {
         failed: 'Failed to update user limits'
       },
       editUser: 'Edit User',
+      rechargeBonusDisabled: 'Disable recharge package bonuses',
+      rechargeBonusDisabledHint: 'New recharge orders for this user receive no package bonus. Existing balances, orders, and manual administrator grants are unaffected.',
       deleteUser: 'Delete User',
       deleteConfirmMessage: "Are you sure you want to delete user '{email}'? This action cannot be undone.",
       searchPlaceholder: 'Search by email, username, notes, or API key...',

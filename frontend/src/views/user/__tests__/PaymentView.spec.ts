@@ -302,6 +302,28 @@ async function mountSubscriptionPlanList(planCount: number) {
   return wrapper
 }
 
+describe('PaymentView recharge bonus eligibility', () => {
+  it.each([0, 5])('displays only the bonus supplied for the current user (%s)', async (bonus) => {
+    vi.useRealTimers()
+    routeState.path = '/purchase'
+    routeState.query = {}
+    window.localStorage.clear()
+    getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({
+      recharge_packages_enabled: true,
+      allow_custom_amount: true,
+      recharge_packages: [{ id: 'pkg_30', amount: 30, bonus_amount: bonus, bonus_validity_days: bonus ? 7 : 0, recommended: true, sort_order: 0 }],
+    }))
+    const wrapper = shallowMount(PaymentView, {
+      global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Teleport: true, Transition: false } },
+    })
+    await flushPromises()
+    expect(wrapper.find('.recharge-package-card').exists()).toBe(true)
+    expect(wrapper.find('.recharge-bonus-pill').exists()).toBe(bonus > 0)
+    expect(wrapper.find('.recharge-bonus-notice').exists()).toBe(bonus > 0)
+    wrapper.unmount()
+  })
+})
+
 describe('PaymentView help text', () => {
   beforeEach(() => {
     vi.useRealTimers()

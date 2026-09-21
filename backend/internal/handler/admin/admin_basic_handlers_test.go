@@ -144,6 +144,28 @@ func TestUserHandlerEndpoints(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 }
 
+func TestUserHandlerUpdateRechargeBonusEligibility(t *testing.T) {
+	for _, value := range []string{"true", "false"} {
+		t.Run(value, func(t *testing.T) {
+			router, svc := setupAdminRouter()
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/1", bytes.NewBufferString(`{"recharge_bonus_disabled":`+value+`}`))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusOK, rec.Code)
+			require.NotNil(t, svc.lastUpdateUserInput.RechargeBonusDisabled)
+			require.Equal(t, value == "true", *svc.lastUpdateUserInput.RechargeBonusDisabled)
+			var body struct {
+				Data struct {
+					RechargeBonusDisabled bool `json:"recharge_bonus_disabled"`
+				} `json:"data"`
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+			require.Equal(t, value == "true", body.Data.RechargeBonusDisabled)
+		})
+	}
+}
+
 func TestUserHandlerBindAuthIdentityMapsRequest(t *testing.T) {
 	router, adminSvc := setupAdminRouter()
 

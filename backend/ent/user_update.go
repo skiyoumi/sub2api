@@ -335,6 +335,20 @@ func (_u *UserUpdate) SetNillableRestrictPublicGroups(v *bool) *UserUpdate {
 	return _u
 }
 
+// SetRechargeBonusDisabled sets the "recharge_bonus_disabled" field.
+func (_u *UserUpdate) SetRechargeBonusDisabled(v bool) *UserUpdate {
+	_u.mutation.SetRechargeBonusDisabled(v)
+	return _u
+}
+
+// SetNillableRechargeBonusDisabled sets the "recharge_bonus_disabled" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableRechargeBonusDisabled(v *bool) *UserUpdate {
+	if v != nil {
+		_u.SetRechargeBonusDisabled(*v)
+	}
+	return _u
+}
+
 // SetBalanceNotifyEnabled sets the "balance_notify_enabled" field.
 func (_u *UserUpdate) SetBalanceNotifyEnabled(v bool) *UserUpdate {
 	_u.mutation.SetBalanceNotifyEnabled(v)
@@ -1085,6 +1099,9 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.RestrictPublicGroups(); ok {
 		_spec.SetField(user.FieldRestrictPublicGroups, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.RechargeBonusDisabled(); ok {
+		_spec.SetField(user.FieldRechargeBonusDisabled, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.BalanceNotifyEnabled(); ok {
 		_spec.SetField(user.FieldBalanceNotifyEnabled, field.TypeBool, value)
@@ -2028,6 +2045,20 @@ func (_u *UserUpdateOne) SetNillableRestrictPublicGroups(v *bool) *UserUpdateOne
 	return _u
 }
 
+// SetRechargeBonusDisabled sets the "recharge_bonus_disabled" field.
+func (_u *UserUpdateOne) SetRechargeBonusDisabled(v bool) *UserUpdateOne {
+	_u.mutation.SetRechargeBonusDisabled(v)
+	return _u
+}
+
+// SetNillableRechargeBonusDisabled sets the "recharge_bonus_disabled" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableRechargeBonusDisabled(v *bool) *UserUpdateOne {
+	if v != nil {
+		_u.SetRechargeBonusDisabled(*v)
+	}
+	return _u
+}
+
 // SetBalanceNotifyEnabled sets the "balance_notify_enabled" field.
 func (_u *UserUpdateOne) SetBalanceNotifyEnabled(v bool) *UserUpdateOne {
 	_u.mutation.SetBalanceNotifyEnabled(v)
@@ -2808,6 +2839,9 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	}
 	if value, ok := _u.mutation.RestrictPublicGroups(); ok {
 		_spec.SetField(user.FieldRestrictPublicGroups, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.RechargeBonusDisabled(); ok {
+		_spec.SetField(user.FieldRechargeBonusDisabled, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.BalanceNotifyEnabled(); ok {
 		_spec.SetField(user.FieldBalanceNotifyEnabled, field.TypeBool, value)

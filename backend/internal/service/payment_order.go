@@ -44,16 +44,6 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if req.OrderType == payment.OrderTypeSubscription && strings.TrimSpace(req.RechargePackageID) != "" {
 		return nil, infraerrors.BadRequest("INVALID_INPUT", "subscription order cannot use a recharge package")
 	}
-	if req.OrderType == payment.OrderTypeBalance {
-		selection, resolveErr := ResolveRechargePackage(cfg, req.RechargePackageID, req.Amount)
-		if resolveErr != nil {
-			return nil, resolveErr
-		}
-		if selection != nil && req.RechargePackageHash != "" && req.RechargePackageHash != selection.ConfigHash {
-			return nil, infraerrors.Conflict("RECHARGE_PACKAGE_CHANGED", "recharge package has changed")
-		}
-		req.rechargePackage = selection
-	}
 	if err := s.checkCancelRateLimit(ctx, req.UserID, cfg); err != nil {
 		return nil, err
 	}
@@ -63,6 +53,16 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	}
 	if user.Status != payment.EntityStatusActive {
 		return nil, infraerrors.Forbidden("USER_INACTIVE", "user account is disabled")
+	}
+	if req.OrderType == payment.OrderTypeBalance {
+		selection, resolveErr := ResolveRechargePackage(cfg, user, req.RechargePackageID, req.Amount)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		if selection != nil && req.RechargePackageHash != "" && req.RechargePackageHash != selection.ConfigHash {
+			return nil, infraerrors.Conflict("RECHARGE_PACKAGE_CHANGED", "recharge package has changed")
+		}
+		req.rechargePackage = selection
 	}
 	if s.notificationEmailService != nil {
 		s.notificationEmailService.RememberRecipientLocale(ctx, req.UserID, user.Email, req.Locale)
