@@ -2207,10 +2207,11 @@ const executeCcsImport = (selection: { app: CcSwitchApp; name: string; model: st
   const importBaseUrl = row.group?.platform === 'antigravity'
     ? `${withoutV1Endpoint(baseUrl)}/antigravity`
     : baseUrl
+  const usageUrl = `${withoutV1Endpoint(baseUrl.trim())}/v1/usage`
 
   const usageScript = `({
     request: {
-      url: "${window.location.origin}/v1/usage",
+      url: ${JSON.stringify(usageUrl)},
       method: "GET",
       headers: { "Authorization": "Bearer {{apiKey}}" }
     },

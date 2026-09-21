@@ -332,12 +332,34 @@ describe('user KeysView', () => {
     expect(url.searchParams.get('apiKey')).toBe('sk-test-key')
     expect(url.searchParams.get('app')).toBe('codex')
     expect(url.searchParams.get('model')).toBe('test-model')
+    const usageScript = atob(url.searchParams.get('usageScript') || '')
+    expect(usageScript).toContain(`url: ${JSON.stringify(`${window.location.origin}/v1/usage`)}`)
     expect(modal.props('show')).toBe(false)
 
     await vi.advanceTimersByTimeAsync(5000)
     expect(showError).not.toHaveBeenCalled()
     expect(showSuccess).not.toHaveBeenCalled()
     expect(showInfo).toHaveBeenCalledWith('keys.ccsImport.openRequested', expect.any(Number))
+  })
+
+  it.each([
+    ['https://api.example.com', 'https://api.example.com/v1/usage'],
+    ['https://api.example.com/', 'https://api.example.com/v1/usage'],
+    ['https://api.example.com/v1', 'https://api.example.com/v1/usage'],
+    ['https://api.example.com/v1/', 'https://api.example.com/v1/usage'],
+    ['https://api.example.com/proxy/v1/', 'https://api.example.com/proxy/v1/usage'],
+  ])('uses the configured API Base URL %s for the imported balance check', async (baseUrl, usageUrl) => {
+    getPublicSettings.mockResolvedValue({ api_base_url: baseUrl })
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    const wrapper = await mountView()
+    await getButtonByText(wrapper, 'keys.importToCcSwitch').trigger('click')
+    wrapper.getComponent(CcSwitchImportModal).vm.$emit('submit', { app: 'codex', name: 'Test provider', model: 'test-model' })
+    await nextTick()
+
+    const url = new URL(String(open.mock.calls[0]?.[0]))
+    const usageScript = atob(url.searchParams.get('usageScript') || '')
+    expect(usageScript).toContain(`url: ${JSON.stringify(usageUrl)}`)
+    expect(usageScript).toContain('"Authorization": "Bearer {{apiKey}}"')
   })
 
   it('keeps the CCS import available to retry when opening the application throws', async () => {
