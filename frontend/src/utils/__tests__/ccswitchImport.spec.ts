@@ -22,7 +22,7 @@ describe('ccswitchImport utils', () => {
     expect(withoutV1Endpoint(input)).toBe(expected)
   })
 
-  it.each(['claude', 'codex', 'gemini', 'opencode'] as CcSwitchApp[])('imports the selected %s application and model', (app) => {
+  it.each(['claude', 'codex', 'gemini', 'opencode', 'grokbuild'] as CcSwitchApp[])('imports the selected %s application and model', (app) => {
     const params = paramsFromDeeplink(buildCcSwitchImportDeeplink({ ...baseInput, app }))
     expect(params.get('app')).toBe(app)
     expect(params.get('model')).toBe(baseInput.model)
@@ -30,12 +30,19 @@ describe('ccswitchImport utils', () => {
     expect(atob(params.get('usageScript') || '')).toBe(baseInput.usageScript)
   })
 
+  it.each(['codex', 'grokbuild'] as CcSwitchApp[])('imports %s with exactly one /v1 suffix', (app) => {
+    for (const baseUrl of ['https://api.example.com', 'https://api.example.com/', 'https://api.example.com/v1', 'https://api.example.com/v1/']) {
+      const params = paramsFromDeeplink(buildCcSwitchImportDeeplink({ ...baseInput, baseUrl, app }))
+      expect(params.get('endpoint')).toBe('https://api.example.com/v1')
+    }
+  })
+
   it('uses modelscube as the import name for opencode', () => {
     const params = paramsFromDeeplink(buildCcSwitchImportDeeplink({ ...baseInput, app: 'opencode' }))
     expect(params.get('name')).toBe('modelscube')
   })
 
-  it.each(['claude', 'codex', 'gemini'] as CcSwitchApp[])('keeps the provider name for %s imports', (app) => {
+  it.each(['claude', 'codex', 'gemini', 'grokbuild'] as CcSwitchApp[])('keeps the provider name for %s imports', (app) => {
     const params = paramsFromDeeplink(buildCcSwitchImportDeeplink({ ...baseInput, app }))
     expect(params.get('name')).toBe(baseInput.providerName)
   })

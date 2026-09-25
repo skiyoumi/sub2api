@@ -1,4 +1,7 @@
-export type CcSwitchApp = 'claude' | 'codex' | 'gemini' | 'opencode'
+export const OPENAI_CC_SWITCH_CODEX_MODEL = 'gpt-5.5'
+export const GROK_CC_SWITCH_MODEL = 'grok-4.5'
+
+export type CcSwitchApp = 'claude' | 'codex' | 'gemini' | 'opencode' | 'grokbuild'
 
 export interface CcSwitchImportDeeplinkInput {
   baseUrl: string
@@ -17,11 +20,22 @@ export function withoutV1Endpoint(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, '').replace(/\/v1$/i, '')
 }
 
+export function antigravityEndpoint(baseUrl: string): string {
+  return `${withoutV1Endpoint(baseUrl)}/antigravity`
+}
+
+function withV1Endpoint(baseUrl: string): string {
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '')
+  return /\/v1$/i.test(normalizedBaseUrl) ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`
+}
+
 export function buildCcSwitchImportDeeplink(input: CcSwitchImportDeeplinkInput): string {
   const endpointBaseUrl = input.endpointBaseUrl || input.baseUrl
   const endpoint = input.app === 'claude'
     ? withoutV1Endpoint(endpointBaseUrl)
-    : endpointBaseUrl.replace(/\/+$/, '')
+    : input.app === 'codex' || input.app === 'grokbuild'
+      ? withV1Endpoint(endpointBaseUrl)
+      : endpointBaseUrl.replace(/\/+$/, '')
   // opencode imports are branded as 'modelscube'; other apps keep the
   // provider name entered by the user.
   const name = input.app === 'opencode' ? 'modelscube' : input.providerName

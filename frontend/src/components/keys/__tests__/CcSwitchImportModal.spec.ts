@@ -68,4 +68,26 @@ describe('CcSwitchImportModal', () => {
     await wrapper.findAll('button').at(-1)!.trigger('click')
     expect(wrapper.emitted('submit')?.[0]?.[0]).toMatchObject({ app: 'opencode', name: 'modelscube' })
   })
+
+  it('selects Grok Build and its default model for Grok keys', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ id: 'grok-4' }, { id: 'grok-4.5' }] }),
+    }))
+    const wrapper = mount(CcSwitchImportModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-test',
+        baseUrl: 'https://api.example.com',
+        providerName: 'Example - Grok',
+        platform: 'grok',
+      },
+      global: { stubs: { BaseDialog: BaseDialogStub } },
+    })
+    await flushPromises()
+
+    expect((wrapper.find('select').element as HTMLSelectElement).value).toBe('grok-4.5')
+    await wrapper.findAll('button').at(-1)!.trigger('click')
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toMatchObject({ app: 'grokbuild', model: 'grok-4.5' })
+  })
 })

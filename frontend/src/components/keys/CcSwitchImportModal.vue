@@ -54,7 +54,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import type { CcSwitchDefaults, GroupPlatform } from '@/types'
-import type { CcSwitchApp } from '@/utils/ccswitchImport'
+import { GROK_CC_SWITCH_MODEL, OPENAI_CC_SWITCH_CODEX_MODEL, type CcSwitchApp } from '@/utils/ccswitchImport'
 
 const props = defineProps<{
   show: boolean
@@ -81,6 +81,7 @@ const appOptions = computed(() => [
   { value: 'codex' as const, label: 'Codex' },
   { value: 'gemini' as const, label: 'Gemini' },
   { value: 'opencode' as const, label: 'OpenCode' },
+  { value: 'grokbuild' as const, label: 'Grok Build' },
 ])
 
 const claudeFields = computed(() => [
@@ -92,6 +93,7 @@ const claudeFields = computed(() => [
 function preferredApp(): CcSwitchApp {
   if (props.platform === 'openai') return 'codex'
   if (props.platform === 'gemini') return 'gemini'
+  if (props.platform === 'grok') return 'grokbuild'
   return 'claude'
 }
 
@@ -103,11 +105,13 @@ function pick(preferred: string | undefined, pattern?: RegExp): string {
 function applyDefaults() {
   const defaults = props.defaults || {}
   const appDefault = form.app === 'codex'
-    ? defaults.codex
+    ? defaults.codex || OPENAI_CC_SWITCH_CODEX_MODEL
     : form.app === 'gemini'
       ? defaults.gemini
       : form.app === 'opencode'
         ? defaults.opencode
+        : form.app === 'grokbuild'
+          ? GROK_CC_SWITCH_MODEL
         : defaults.claude?.model
   form.model = pick(
     appDefault,

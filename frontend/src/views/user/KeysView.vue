@@ -1274,6 +1274,7 @@ import { platformBadgeLightClass } from '@/utils/platformColors'
 import { KEY_GROUP_PROVIDERS, KEY_GROUP_PROVIDER_ICONS, getKeyGroupProvider, type KeyGroupProvider } from '@/utils/keyGroupProviders'
 import {
   buildCcSwitchImportDeeplink,
+  antigravityEndpoint,
   withoutV1Endpoint,
   type CcSwitchApp
 } from '@/utils/ccswitchImport'
@@ -2205,7 +2206,7 @@ const executeCcsImport = (selection: { app: CcSwitchApp; name: string; model: st
   if (!row) return
   const baseUrl = publicSettings.value?.api_base_url || window.location.origin
   const importBaseUrl = row.group?.platform === 'antigravity'
-    ? `${withoutV1Endpoint(baseUrl)}/antigravity`
+    ? antigravityEndpoint(baseUrl)
     : baseUrl
   const usageUrl = `${withoutV1Endpoint(baseUrl.trim())}/v1/usage`
 
