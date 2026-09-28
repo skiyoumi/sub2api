@@ -24,6 +24,30 @@ export function antigravityEndpoint(baseUrl: string): string {
   return `${withoutV1Endpoint(baseUrl)}/antigravity`
 }
 
+/**
+ * Balance query CC Switch runs against the imported provider. CC Switch fills
+ * `{{baseUrl}}` with the provider's base URL as stored. Users may edit it
+ * afterwards, so the URL
+ * strips an existing `/v1` instead of blindly appending one (`/v1/v1/usage`
+ * is a 404 and CC Switch shows "query failed").
+ */
+export const CC_SWITCH_USAGE_SCRIPT = `({
+    request: {
+      url: "{{baseUrl}}".replace(/\\/+$/, "").replace(/\\/v1$/, "") + "/v1/usage",
+      method: "GET",
+      headers: { "Authorization": "Bearer {{apiKey}}" }
+    },
+    extractor: function(response) {
+      const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
+      const unit = response?.unit ?? response?.quota?.unit ?? "USD";
+      return {
+        isValid: response?.is_active ?? response?.isValid ?? true,
+        remaining,
+        unit
+      };
+    }
+  })`
+
 function withV1Endpoint(baseUrl: string): string {
   const normalizedBaseUrl = baseUrl.replace(/\/+$/, '')
   return /\/v1$/i.test(normalizedBaseUrl) ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`
@@ -31,9 +55,10 @@ function withV1Endpoint(baseUrl: string): string {
 
 export function buildCcSwitchImportDeeplink(input: CcSwitchImportDeeplinkInput): string {
   const endpointBaseUrl = input.endpointBaseUrl || input.baseUrl
+  // CC Switch's Codex provider appends the OpenAI-compatible path itself.
   const endpoint = input.app === 'claude'
     ? withoutV1Endpoint(endpointBaseUrl)
-    : input.app === 'codex' || input.app === 'grokbuild'
+    : input.app === 'grokbuild'
       ? withV1Endpoint(endpointBaseUrl)
       : endpointBaseUrl.replace(/\/+$/, '')
   // opencode imports are branded as 'modelscube'; other apps keep the
