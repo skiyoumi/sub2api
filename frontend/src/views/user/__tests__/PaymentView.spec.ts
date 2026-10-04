@@ -303,6 +303,33 @@ async function mountSubscriptionPlanList(planCount: number) {
 }
 
 describe('PaymentView recharge bonus eligibility', () => {
+  it('applies tiers to custom amounts without stacking them onto packages', async () => {
+    vi.useRealTimers()
+    routeState.path = '/purchase'
+    routeState.query = {}
+    window.localStorage.clear()
+    getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({
+      recharge_packages_enabled: true,
+      allow_custom_amount: true,
+      recharge_packages: [{ id: 'pkg_30', amount: 30, bonus_amount: 5, bonus_validity_days: 7, recommended: true, sort_order: 0 }],
+      recharge_bonus_tiers: [{ min_amount: 10, bonus_percent: 20 }],
+      recharge_bonus_mode: 'bonus',
+    }))
+    const wrapper = shallowMount(PaymentView, {
+      global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Teleport: true, Transition: false } },
+    })
+    await flushPromises()
+    await wrapper.find('.recharge-package-card').trigger('click')
+    expect(wrapper.find('[data-testid="recharge-credited-row"]').text()).toContain('$35.00')
+    expect(wrapper.find('[data-testid="recharge-bonus-row"]').exists()).toBe(false)
+    await wrapper.find('.recharge-panel button').trigger('click')
+    wrapper.findComponent(AmountInput).vm.$emit('update:modelValue', 30)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="recharge-credited-row"]').text()).toContain('$36.00')
+    expect(wrapper.find('[data-testid="recharge-bonus-row"]').text()).toContain('+$6.00')
+    wrapper.unmount()
+  })
+
   it.each([0, 5])('displays only the bonus supplied for the current user (%s)', async (bonus) => {
     vi.useRealTimers()
     routeState.path = '/purchase'

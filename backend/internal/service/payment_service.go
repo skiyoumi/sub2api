@@ -71,52 +71,52 @@ func generateRandomString(n int) string {
 }
 
 type CreateOrderRequest struct {
-	UserID          int64
-	Amount          float64
-	PaymentType     string
-	OpenID          string
-	ClientIP        string
-	IsMobile        bool
-	IsWeChatBrowser bool
-	SrcHost         string
-	SrcURL          string
-	ReturnURL       string
-	PaymentSource   string
-	OrderType       string
+	UserID              int64
+	Amount              float64
+	PaymentType         string
+	OpenID              string
+	ClientIP            string
+	IsMobile            bool
+	IsWeChatBrowser     bool
+	SrcHost             string
+	SrcURL              string
+	ReturnURL           string
+	PaymentSource       string
+	OrderType           string
 	PlanID              int64
 	RechargePackageID   string
 	RechargePackageHash string
 	Locale              string
-	rechargePackage *RechargePackageSelection
+	rechargePackage     *RechargePackageSelection
 }
 
 type CreateOrderResponse struct {
-	OrderID      int64                           `json:"order_id"`
-	Amount       float64                         `json:"amount"`
-	PayAmount    float64                         `json:"pay_amount"`
-	FeeRate      float64                         `json:"fee_rate"`
-	Status       string                          `json:"status"`
-	ResultType   payment.CreatePaymentResultType `json:"result_type,omitempty"`
-	PaymentType  string                          `json:"payment_type"`
-	OutTradeNo   string                          `json:"out_trade_no,omitempty"`
-	PayURL       string                          `json:"pay_url,omitempty"`
-	QRCode       string                          `json:"qr_code,omitempty"`
-	ClientSecret string                          `json:"client_secret,omitempty"`
-	IntentID     string                          `json:"intent_id,omitempty"`
-	Currency     string                          `json:"currency,omitempty"`
-	CountryCode  string                          `json:"country_code,omitempty"`
-	PaymentEnv   string                          `json:"payment_env,omitempty"`
-	OAuth        *payment.WechatOAuthInfo        `json:"oauth,omitempty"`
-	JSAPI        *payment.WechatJSAPIPayload     `json:"jsapi,omitempty"`
-	JSAPIPayload *payment.WechatJSAPIPayload     `json:"jsapi_payload,omitempty"`
-	ExpiresAt    time.Time                       `json:"expires_at"`
-	PaymentMode  string                          `json:"payment_mode,omitempty"`
-	ResumeToken  string                          `json:"resume_token,omitempty"`
-	AlipayMobilePrecreateDeepLink bool           `json:"alipay_mobile_precreate_deep_link,omitempty"`
-	BaseAmount            float64 `json:"base_amount,omitempty"`
-	PermanentCreditAmount float64 `json:"permanent_credit_amount,omitempty"`
-	BonusAmount           float64 `json:"bonus_amount,omitempty"`
-	RechargePackageID     string  `json:"recharge_package_id,omitempty"`
+	OrderID                       int64                           `json:"order_id"`
+	Amount                        float64                         `json:"amount"`
+	PayAmount                     float64                         `json:"pay_amount"`
+	FeeRate                       float64                         `json:"fee_rate"`
+	Status                        string                          `json:"status"`
+	ResultType                    payment.CreatePaymentResultType `json:"result_type,omitempty"`
+	PaymentType                   string                          `json:"payment_type"`
+	OutTradeNo                    string                          `json:"out_trade_no,omitempty"`
+	PayURL                        string                          `json:"pay_url,omitempty"`
+	QRCode                        string                          `json:"qr_code,omitempty"`
+	ClientSecret                  string                          `json:"client_secret,omitempty"`
+	IntentID                      string                          `json:"intent_id,omitempty"`
+	Currency                      string                          `json:"currency,omitempty"`
+	CountryCode                   string                          `json:"country_code,omitempty"`
+	PaymentEnv                    string                          `json:"payment_env,omitempty"`
+	OAuth                         *payment.WechatOAuthInfo        `json:"oauth,omitempty"`
+	JSAPI                         *payment.WechatJSAPIPayload     `json:"jsapi,omitempty"`
+	JSAPIPayload                  *payment.WechatJSAPIPayload     `json:"jsapi_payload,omitempty"`
+	ExpiresAt                     time.Time                       `json:"expires_at"`
+	PaymentMode                   string                          `json:"payment_mode,omitempty"`
+	ResumeToken                   string                          `json:"resume_token,omitempty"`
+	AlipayMobilePrecreateDeepLink bool                            `json:"alipay_mobile_precreate_deep_link,omitempty"`
+	BaseAmount                    float64                         `json:"base_amount,omitempty"`
+	PermanentCreditAmount         float64                         `json:"permanent_credit_amount,omitempty"`
+	BonusAmount                   float64                         `json:"bonus_amount,omitempty"`
+	RechargePackageID             string                          `json:"recharge_package_id,omitempty"`
 }
 
 type OrderListParams struct {
