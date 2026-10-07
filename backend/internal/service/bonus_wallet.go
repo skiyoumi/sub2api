@@ -479,7 +479,7 @@ func (w *BonusWallet) RevokeForRefund(ctx context.Context, input BonusRevokeInpu
 			INSERT INTO wallet_bonus_transactions
 			(user_id, grant_id, type, amount, request_id, source_type, source_id, balance_after)
 			VALUES ($1, $2, 'REFUND_REVOKE', $3, $4, $5, $6,
-				(SELECT balance::text FROM users WHERE id = $1))
+				(SELECT balance FROM users WHERE id = $1))
 			ON CONFLICT (request_id, grant_id, type) DO NOTHING`, input.UserID, grantID, revoke.String(), requestID, sourceType, sourceID); err != nil {
 				return nil, err
 			}
@@ -576,7 +576,7 @@ func (w *BonusWallet) ExpireBatch(ctx context.Context, limit int) (*BonusExpireR
 		if _, err := tx.ExecContext(ctx, `UPDATE wallet_bonus_grants SET remaining_amount = 0, status = 'EXPIRED', expired_at = NOW(), updated_at = NOW() WHERE id = $1 AND status = 'ACTIVE'`, g.id); err != nil {
 			return nil, err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO wallet_bonus_transactions (user_id, grant_id, type, amount, request_id, source_type, source_id, balance_after) VALUES ($1, $2, 'EXPIRE', $3, $4, $5, $6, (SELECT balance::text FROM users WHERE id = $1)) ON CONFLICT (request_id, grant_id, type) DO NOTHING`, g.userID, g.id, g.amount.String(), fmt.Sprintf("expiry:%d", g.id), g.sourceType, g.sourceID); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO wallet_bonus_transactions (user_id, grant_id, type, amount, request_id, source_type, source_id, balance_after) VALUES ($1, $2, 'EXPIRE', $3, $4, $5, $6, (SELECT balance FROM users WHERE id = $1)) ON CONFLICT (request_id, grant_id, type) DO NOTHING`, g.userID, g.id, g.amount.String(), fmt.Sprintf("expiry:%d", g.id), g.sourceType, g.sourceID); err != nil {
 			return nil, err
 		}
 		result.Grants++
