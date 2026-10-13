@@ -96,7 +96,7 @@ type BillingCache interface {
 
 // ModelPricing 模型价格配置（per-token价格，与LiteLLM格式一致）
 type ModelPricing struct {
-	// UltrafastMultiplier is model-owned and independent of operator Fast pricing.
+	// UltrafastMultiplier uses the model default unless explicitly overridden by the channel.
 	UltrafastMultiplier                float64
 	InputPricePerToken                 float64            // 每token输入价格 (USD)
 	InputPricePerTokenPriority         float64            // priority service tier 下每token输入价格 (USD)
@@ -1403,6 +1403,9 @@ func (s *BillingService) GetModelPricingWithChannel(model string, channelPricing
 	cloned := *pricing
 	pricing = &cloned
 	applyChannelTokenPriceOverrides(pricing, channelPricing)
+	if channelPricing.UltrafastMultiplier != nil {
+		pricing.UltrafastMultiplier = *channelPricing.UltrafastMultiplier
+	}
 	pricing.FastMultiplier = channelPricing.FastMultiplier
 	pricing.FlexMultiplier = channelPricing.FlexMultiplier
 	pricing.ReasoningEffortMultipliers = maps.Clone(channelPricing.ReasoningEffortMultipliers)
@@ -1882,7 +1885,7 @@ func (s *BillingService) applyModelSpecificPricingPolicyEx(model string, pricing
 		return pricing
 	}
 	cloned := *pricing
-	if isOpenAIGPT6AstraModel(normalized) {
+	if isOpenAIGPT6AstraModel(normalized) && cloned.UltrafastMultiplier <= 0 {
 		cloned.UltrafastMultiplier = 6
 	}
 	if needsOpus55FastMultiplier {

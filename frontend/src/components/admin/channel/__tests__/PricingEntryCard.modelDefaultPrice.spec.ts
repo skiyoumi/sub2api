@@ -47,6 +47,32 @@ function addModels(entry: PricingFormEntry, models: string[]) {
 const emittedEntries = (wrapper: ReturnType<typeof shallowMount>) =>
   (wrapper.emitted('update') ?? []).map(e => e[0] as PricingFormEntry)
 
+describe('PricingEntryCard service tier multipliers', () => {
+  it('edits and clears Ultrafast independently of Fast and Flex', async () => {
+    const entry = { ...createEntry(), fast_multiplier: 2.5, ultrafast_multiplier: 4.5, flex_multiplier: 0.5 }
+    const wrapper = shallowMount(PricingEntryCard, { props: { entry, enableTierMultipliers: true } })
+    const input = wrapper.findAll('input[type="number"]').find(input =>
+      input.element.parentElement?.textContent?.includes('admin.channels.form.ultrafastMultiplier')
+    )!
+
+    expect(input).toBeDefined()
+    expect((input.element as HTMLInputElement).value).toBe('4.5')
+    await input.setValue('3.75')
+    expect(emittedEntries(wrapper).at(-1)).toMatchObject({
+      fast_multiplier: 2.5, ultrafast_multiplier: '3.75', flex_multiplier: 0.5,
+    })
+    await input.setValue('')
+    expect(emittedEntries(wrapper).at(-1)).toMatchObject({
+      fast_multiplier: 2.5, ultrafast_multiplier: null, flex_multiplier: 0.5,
+    })
+  })
+
+  it('hides service tier controls when multipliers are disabled', () => {
+    const wrapper = shallowMount(PricingEntryCard, { props: { entry: createEntry() } })
+    expect(wrapper.text()).not.toContain('admin.channels.form.ultrafastMultiplier')
+  })
+})
+
 describe('PricingEntryCard default price auto-fill', () => {
   beforeEach(() => {
     vi.clearAllMocks()

@@ -246,6 +246,9 @@ func (r *ModelPricingResolver) applyTokenOverrides(chPricing *ChannelModelPricin
 			break
 		}
 	}
+	if chPricing.UltrafastMultiplier != nil {
+		resolved.BasePricing.UltrafastMultiplier = *chPricing.UltrafastMultiplier
+	}
 	resolved.BasePricing.FastMultiplier = chPricing.FastMultiplier
 	resolved.BasePricing.FlexMultiplier = chPricing.FlexMultiplier
 	resolved.BasePricing.ReasoningEffortMultipliers = maps.Clone(chPricing.ReasoningEffortMultipliers)

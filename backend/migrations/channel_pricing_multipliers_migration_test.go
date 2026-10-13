@@ -41,3 +41,12 @@ func TestChannelPricingMultipliersMigration(t *testing.T) {
 			" CHECK ("+constraint.column+" IS NULL OR "+constraint.column+" > 0)")
 	}
 }
+
+func TestChannelUltrafastMultiplierMigration(t *testing.T) {
+	content, err := FS.ReadFile("243_channel_ultrafast_multiplier.sql")
+	require.NoError(t, err)
+	sql := strings.Join(strings.Fields(string(content)), " ")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS ultrafast_multiplier NUMERIC(12,6)")
+	require.Contains(t, sql, "conname = 'channel_model_pricing_ultrafast_multiplier_positive' AND conrelid = 'channel_model_pricing'::regclass")
+	require.Contains(t, sql, "CHECK (ultrafast_multiplier IS NULL OR ultrafast_multiplier > 0)")
+}

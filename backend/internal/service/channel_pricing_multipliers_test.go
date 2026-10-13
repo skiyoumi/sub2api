@@ -19,6 +19,8 @@ func TestConfiguredServiceTierMultiplier(t *testing.T) {
 		{name: "priority alias", serviceTier: "priority", pricing: &ModelPricing{FastMultiplier: pricingMultiplier(2)}, want: 2},
 		{name: "flex configured", serviceTier: "flex", pricing: &ModelPricing{FlexMultiplier: pricingMultiplier(0.4)}, want: 0.4},
 		{name: "legacy fast default", serviceTier: "fast", pricing: &ModelPricing{}, want: 2},
+		{name: "ultrafast configured independently", serviceTier: " Ultrafast ", pricing: &ModelPricing{UltrafastMultiplier: 4.5, FastMultiplier: pricingMultiplier(2.5), FlexMultiplier: pricingMultiplier(0.4)}, want: 4.5},
+		{name: "fast ignores ultrafast multiplier", serviceTier: "fast", pricing: &ModelPricing{UltrafastMultiplier: 4.5}, want: 2},
 		{name: "ultrafast default", serviceTier: "ultrafast", pricing: &ModelPricing{}, want: 2},
 		{name: "ultrafast ignores fast multiplier", serviceTier: "ultrafast", pricing: &ModelPricing{FastMultiplier: pricingMultiplier(2.5)}, want: 2},
 		{name: "legacy flex default", serviceTier: "flex", pricing: &ModelPricing{}, want: 0.5},
@@ -218,6 +220,9 @@ func TestChannelMultipliersMustBePositive(t *testing.T) {
 	zero := 0.0
 	require.Error(t, checkPricesNotNegative(ChannelModelPricing{FastMultiplier: &zero}))
 	require.Error(t, checkPricesNotNegative(ChannelModelPricing{FlexMultiplier: &zero}))
+	require.Error(t, checkPricesNotNegative(ChannelModelPricing{UltrafastMultiplier: &zero}))
+	require.Error(t, checkPricesNotNegative(ChannelModelPricing{UltrafastMultiplier: pricingMultiplier(-1)}))
+	require.NoError(t, checkPricesNotNegative(ChannelModelPricing{UltrafastMultiplier: pricingMultiplier(0.25)}))
 	require.Error(t, ValidateIntervals([]PricingInterval{{
 		MinTokens:       100,
 		InputMultiplier: &zero,
@@ -287,4 +292,67 @@ func TestCalculateTokenCostCombinesIntervalAndFastMultiplier(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.InDelta(t, 1e-3, cost.TotalCost, 1e-12)
+}
+
+func TestChannelUltrafastMultiplierOverridesModelDefault(t *testing.T) {
+	svc := &BillingService{fallbackPrices: make(map[string]*ModelPricing)}
+	svc.initFallbackPricing()
+	for _, model := range []string{"gpt-6-astra", "gpt-5.5"} {
+		t.Run(model, func(t *testing.T) {
+			base, err := svc.GetModelPricing(model)
+			require.NoError(t, err)
+			defaultMultiplier := configuredServiceTierMultiplier("ultrafast", base)
+			channel := &ChannelModelPricing{
+				InputPrice:          pricingMultiplier(1e-6),
+				OutputPrice:         pricingMultiplier(2e-6),
+				CacheWritePrice:     pricingMultiplier(3e-6),
+				CacheReadPrice:      pricingMultiplier(0.5e-6),
+				FastMultiplier:      pricingMultiplier(2.5),
+				UltrafastMultiplier: pricingMultiplier(4.5),
+			}
+			pricing, err := svc.GetModelPricingWithChannel(model, channel)
+			require.NoError(t, err)
+			require.Equal(t, 4.5, configuredServiceTierMultiplier("ultrafast", pricing))
+			require.Equal(t, 2.5, configuredServiceTierMultiplier("fast", pricing))
+
+			resolver := &ModelPricingResolver{}
+			resolved := &ResolvedPricing{Source: PricingSourceChannel, BasePricing: base}
+			resolver.applyTokenOverrides(channel, resolved)
+			cost, err := svc.calculateTokenCost(resolved, CostInput{
+				Model: model, Resolver: resolver, RateMultiplier: 1, ServiceTier: "ultrafast",
+				Tokens: UsageTokens{InputTokens: 1000, OutputTokens: 1000, CacheCreationTokens: 1000, CacheReadTokens: 1000},
+			})
+			require.NoError(t, err)
+			require.InDelta(t, 0.0045, cost.InputCost, 1e-12)
+			require.InDelta(t, 0.009, cost.OutputCost, 1e-12)
+			require.InDelta(t, 0.0135, cost.CacheCreationCost, 1e-12)
+			require.InDelta(t, 0.00225, cost.CacheReadCost, 1e-12)
+			require.Equal(t, defaultMultiplier, configuredServiceTierMultiplier("ultrafast", base), "channel override must not mutate shared model pricing")
+
+			channel.UltrafastMultiplier = nil
+			pricing, err = svc.GetModelPricingWithChannel(model, channel)
+			require.NoError(t, err)
+			require.Equal(t, defaultMultiplier, configuredServiceTierMultiplier("ultrafast", pricing))
+			resolved = &ResolvedPricing{BasePricing: base}
+			resolver.applyTokenOverrides(channel, resolved)
+			require.Equal(t, defaultMultiplier, configuredServiceTierMultiplier("ultrafast", resolved.BasePricing))
+		})
+	}
+}
+
+func TestCalculateTokenCostCombinesIntervalAndUltrafastMultiplier(t *testing.T) {
+	resolver := &ModelPricingResolver{}
+	resolved := &ResolvedPricing{Source: PricingSourceChannel, longContextPricingEnabled: true}
+	resolver.applyTokenOverrides(&ChannelModelPricing{
+		InputPrice:          pricingMultiplier(1e-6),
+		FastMultiplier:      pricingMultiplier(2.5),
+		UltrafastMultiplier: pricingMultiplier(4.5),
+		Intervals:           []PricingInterval{{MinTokens: 100, InputMultiplier: pricingMultiplier(2)}},
+	}, resolved)
+	cost, err := (&BillingService{}).calculateTokenCost(resolved, CostInput{
+		Model: "gpt-6-astra", Tokens: UsageTokens{InputTokens: 200}, RateMultiplier: 1,
+		ServiceTier: "ultrafast", Resolver: resolver,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 0.0018, cost.TotalCost, 1e-12)
 }
