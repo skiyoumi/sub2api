@@ -93,6 +93,7 @@ type ChannelModelPricing struct {
 	Platform                   string              `json:"platform"` // 所属平台（anthropic/openai/gemini/...）
 	Models                     []string            `json:"models"`
 	BillingMode                BillingMode         `json:"billing_mode"`
+	LongContextPricingDisabled bool                `json:"long_context_pricing_disabled,omitempty"` // 分组逐模型禁用，默认沿用分组/账号开关。
 	InputPrice                 *float64            `json:"input_price"`
 	OutputPrice                *float64            `json:"output_price"`
 	CacheWritePrice            *float64            `json:"cache_write_price"`

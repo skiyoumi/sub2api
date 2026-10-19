@@ -44,6 +44,15 @@ type ResolvedPricing struct {
 	longContextPricingEnabled bool
 }
 
+// useLongContextPricing 统一分组、账号与逐模型开关的优先级。
+// 逐模型显式禁用优先于分组与账号的开启设置。
+func (p *ResolvedPricing) useLongContextPricing(accountEnabled bool) bool {
+	if p.channelPricing != nil && p.channelPricing.LongContextPricingDisabled {
+		return false
+	}
+	return p.longContextPricingEnabled || accountEnabled
+}
+
 // ModelPricingResolver 统一模型定价解析器。
 // 解析链：Group → Channel → LiteLLM → Fallback。
 type ModelPricingResolver struct {

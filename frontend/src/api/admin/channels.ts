@@ -43,6 +43,8 @@ export interface ChannelModelPricing {
   platform: string
   models: string[]
   billing_mode: BillingMode
+  /** Per-model group override; omitted values follow the group/account setting. */
+  long_context_pricing_disabled?: boolean
   input_price: number | null
   output_price: number | null
   cache_write_price: number | null

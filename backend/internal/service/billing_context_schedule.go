@@ -199,7 +199,7 @@ type contextBreakpointPlan struct {
 // contextPricingBreakpoints 从计费自身的规则输入收集价格断点（不读取任何倍率）。
 func (s *BillingService) contextPricingBreakpoints(resolver *ModelPricingResolver, resolved *ResolvedPricing, model string) contextBreakpointPlan {
 	plan := contextBreakpointPlan{}
-	if !resolved.longContextPricingEnabled {
+	if !resolved.useLongContextPricing(false) {
 		return plan
 	}
 	if len(resolved.Intervals) > 0 {

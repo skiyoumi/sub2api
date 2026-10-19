@@ -1598,11 +1598,9 @@ func (s *BillingService) CalculateCostUnified(input CostInput) (*CostBreakdown, 
 func (s *BillingService) calculateTokenCost(resolved *ResolvedPricing, input CostInput) (*CostBreakdown, error) {
 	totalContext := input.Tokens.InputTokens + input.Tokens.CacheCreationTokens + input.Tokens.CacheReadTokens
 
-	// 分组开关是统一入口；账号 API 开关保留为额外开启能力，但 false 不否决分组配置。
-	contextTierPricingEnabled := resolved.longContextPricingEnabled
-	if input.LongContextBillingEnabled != nil && *input.LongContextBillingEnabled {
-		contextTierPricingEnabled = true
-	}
+	// 账号可额外开启长上下文计费，逐模型显式禁用始终优先。
+	accountLongContextEnabled := input.LongContextBillingEnabled != nil && *input.LongContextBillingEnabled
+	contextTierPricingEnabled := resolved.useLongContextPricing(accountLongContextEnabled)
 
 	pricingContext := totalContext
 	if !contextTierPricingEnabled {

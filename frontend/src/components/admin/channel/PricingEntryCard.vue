@@ -101,6 +101,19 @@
 
         <!-- Token mode -->
         <div v-if="entry.billing_mode === 'token'">
+          <label v-if="showLongContextPricingToggle" class="mt-3 flex items-start gap-2">
+            <input
+              type="checkbox"
+              :checked="entry.long_context_pricing_disabled === true"
+              @change="emit('update', { ...entry, long_context_pricing_disabled: ($event.target as HTMLInputElement).checked })"
+              class="mt-0.5"
+              data-testid="disable-long-context-pricing"
+            />
+            <span>
+              <span class="block text-sm text-gray-700 dark:text-gray-300">{{ t('admin.groups.modelPricing.disableLongContext') }}</span>
+              <span class="block text-xs text-gray-500 dark:text-gray-400">{{ t('admin.groups.modelPricing.disableLongContextHint') }}</span>
+            </span>
+          </label>
           <!-- Default prices (fallback when no interval matches) -->
           <label class="mt-3 block text-xs font-medium text-gray-500 dark:text-gray-400">
             {{ t('admin.channels.form.defaultPrices') }}
@@ -323,10 +336,12 @@ const props = withDefaults(defineProps<{
   entry: PricingFormEntry
   platform?: string
   hideTokenIntervals?: boolean
+  showLongContextPricingToggle?: boolean
   enableTimePricing?: boolean
   enableTierMultipliers?: boolean
 }>(), {
   hideTokenIntervals: false,
+  showLongContextPricingToggle: false,
   enableTimePricing: false,
   enableTierMultipliers: false,
 })
