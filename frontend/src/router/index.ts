@@ -33,7 +33,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/home',
     name: 'Home',
-    component: () => import('@/views/HomeView.vue'),
+    component: () => import('@/views/mofang/MofangHomeView.vue'),
     meta: {
       requiresAuth: false,
       title: 'Home'
@@ -42,7 +42,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/login',
     name: 'Login',
-    component: () => import('@/views/auth/LoginView.vue'),
+    component: () => import('@/views/mofang/MofangLoginView.vue'),
     meta: {
       requiresAuth: false,
       title: 'Login',
