@@ -1,4 +1,5 @@
 import mofang from './mofang'
+import adminAccessKeys from './adminAccessKeys'
 import landing from './landing'
 import common from './common'
 import dashboard from './dashboard'
@@ -10,6 +11,7 @@ import misc from './misc'
 
 export default {
   mofang,
+  adminAccessKeys,
   ...landing,
   ...common,
   ...dashboard,
