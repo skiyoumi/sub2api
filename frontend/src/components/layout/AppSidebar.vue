@@ -495,6 +495,10 @@ const PluginIcon = {
   render: () => h(Icon, { name: 'cube' })
 }
 
+const MCPIcon = {
+  render: () => h(Icon, { name: 'mcp' })
+}
+
 const BellIcon = {
   render: () =>
     h(
@@ -712,6 +716,7 @@ const menuIcons: Record<SidebarMenuIcon, unknown> = {
   GiftIcon,
   GlobeIcon,
   KeyIcon,
+  MCPIcon,
   OrderIcon,
   OrderListIcon,
   PluginIcon,

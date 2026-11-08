@@ -8,6 +8,8 @@ const componentPath = resolve(dirname(fileURLToPath(import.meta.url)), '../AppSi
 const componentSource = readFileSync(componentPath, 'utf8')
 const stylePath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../style.css')
 const styleSource = readFileSync(stylePath, 'utf8')
+const menuSource = readFileSync(resolve(dirname(componentPath), '../../utils/sidebarMenus.ts'), 'utf8')
+const composableSource = readFileSync(resolve(dirname(componentPath), '../../composables/useSidebarMenus.ts'), 'utf8')
 
 describe('AppSidebar custom SVG styles', () => {
   it('does not override uploaded SVG fill or stroke colors', () => {
@@ -60,5 +62,33 @@ describe('AppSidebar header styles', () => {
     expect(sidebarBrandBlockMatch).not.toBeNull()
     expect(sidebarHeaderBlockMatch?.[0]).not.toContain('@apply overflow-hidden;')
     expect(sidebarBrandBlockMatch?.[0]).not.toContain('overflow: hidden;')
+  })
+})
+
+describe('AppSidebar subscription feature flag', () => {
+  it('gates the My Subscriptions entry behind the subscription public-settings flag', () => {
+    expect(composableSource).toContain('Object.entries(FeatureFlags).map(([name, flag]) => [name, makeSidebarFlag(flag)])')
+    expect(menuSource).toMatch(/path: '\/subscriptions'[^\n]*feature: 'subscription'/)
+  })
+
+  it('also hides the admin Subscription Management entry on recharge-only sites', () => {
+    expect(menuSource).toMatch(/path: '\/admin\/subscriptions'[^\n]*feature: 'subscription'/)
+  })
+
+  it('derives the purchase entry label from the site billing mode', () => {
+    expect(composableSource).toContain("import { resolveSiteBillingMode } from '@/utils/siteBillingMode'")
+    expect(composableSource).toMatch(/case 'recharge_only':\s*return 'nav\.recharge'/)
+    expect(composableSource).toMatch(/case 'subscription_only':\s*return 'nav\.subscribe'/)
+    expect(composableSource).toContain("item.path === '/purchase' ? { ...item, labelKey: purchaseLabelKey.value } : item")
+  })
+})
+
+describe('AppSidebar MCP entry', () => {
+  it('uses the MCP logo and shows the entry only when the deployment enables MCP', () => {
+    expect(componentSource).toContain("render: () => h(Icon, { name: 'mcp' })")
+    expect(composableSource).toContain('Object.entries(FeatureFlags).map(([name, flag]) => [name, makeSidebarFlag(flag)])')
+    expect(menuSource).toMatch(/path: '\/settings\/mcp'[^\n]*icon: 'MCPIcon', feature: 'mcp'/)
+    expect(menuSource).toMatch(/path: '\/settings\/mcp'[^\n]*feature: 'mcp', simpleModeOnly: true/)
+    expect(menuSource).not.toMatch(/path: '\/settings\/mcp'[^\n]*PluginIcon/)
   })
 })

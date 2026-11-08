@@ -15,6 +15,7 @@ export type SidebarMenuIcon =
   | 'GiftIcon'
   | 'GlobeIcon'
   | 'KeyIcon'
+  | 'MCPIcon'
   | 'OrderIcon'
   | 'OrderListIcon'
   | 'PluginIcon'
@@ -67,6 +68,7 @@ const builtInSidebarMenus: Record<SidebarSection, SidebarMenuEntry[]> = {
     { path: '/redeem', labelKey: 'nav.redeem', icon: 'GiftIcon', hideInSimpleMode: true },
     { path: '/affiliate', labelKey: 'nav.affiliate', icon: 'UsersIcon', hideInSimpleMode: true, feature: 'affiliate' },
     { path: '/profile', labelKey: 'nav.profile', icon: 'UserIcon' },
+    { path: '/settings/mcp', labelKey: 'mcp.title', icon: 'MCPIcon', feature: 'mcp' },
   ],
   admin: [
     { path: '/admin/dashboard', labelKey: 'nav.dashboard', icon: 'DashboardIcon' },
@@ -133,6 +135,7 @@ const builtInSidebarMenus: Record<SidebarSection, SidebarMenuEntry[]> = {
     { path: '/admin/usage', labelKey: 'nav.usage', icon: 'ChartIcon' },
     { path: '/admin/audit-logs', labelKey: 'nav.auditLogs', icon: 'ShieldIcon', hideInSimpleMode: true },
     { path: '/keys', labelKey: 'nav.apiKeys', icon: 'KeyIcon', simpleModeOnly: true },
+    { path: '/settings/mcp', labelKey: 'mcp.title', icon: 'MCPIcon', feature: 'mcp', simpleModeOnly: true },
     { path: '/admin/settings', labelKey: 'nav.settings', icon: 'CogIcon' },
   ],
 }

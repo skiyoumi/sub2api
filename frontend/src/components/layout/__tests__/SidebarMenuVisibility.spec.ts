@@ -14,7 +14,7 @@ const appStore = reactive({
   cachedPublicSettings: {
     custom_menu_items: [] as CustomMenuItem[], sidebar_menu_order: {} as SidebarMenuOrder,
     channel_monitor_enabled: true, payment_enabled: true, available_channels_enabled: false,
-    subscription_enabled: true, payment_balance_disabled: false,
+    subscription_enabled: true, payment_balance_disabled: false, mcp_enabled: false,
     affiliate_enabled: false, risk_control_enabled: false, plugin_management_enabled: false,
   },
 })
@@ -44,7 +44,7 @@ beforeEach(() => {
   appStore.cachedPublicSettings = {
     custom_menu_items: [{ id: 'cards', label: 'Custom user link', url: 'https://example.com', icon_svg: '', visibility: 'user', sort_order: 0 }],
     sidebar_menu_order: {}, channel_monitor_enabled: true, payment_enabled: true,
-    subscription_enabled: true, payment_balance_disabled: false,
+    subscription_enabled: true, payment_balance_disabled: false, mcp_enabled: false,
     available_channels_enabled: false, affiliate_enabled: false,
     risk_control_enabled: false, plugin_management_enabled: false,
   }
@@ -86,6 +86,27 @@ function expectSameMenus(menus: Awaited<ReturnType<typeof mountMenus>>, section:
 }
 
 describe('sidebar and menu editor share actual menu visibility', () => {
+
+  it.each([
+    { isAdmin: true, isSimpleMode: false, section: 'user' },
+    { isAdmin: true, isSimpleMode: true, section: 'admin' },
+    { isAdmin: false, isSimpleMode: false, section: 'user' },
+  ] as const)('keeps the MCP entry gated for admin=$isAdmin simple=$isSimpleMode', async ({ isAdmin, isSimpleMode, section }) => {
+    Object.assign(authStore, { isAdmin, isSimpleMode })
+    const menus = await mountMenus()
+    await menus.editor.get(`[data-sidebar-section="${section}"]`).trigger('click')
+    expect(menus.sidebar.find('a[href="/settings/mcp"]').exists()).toBe(false)
+    expect(menus.editor.find('[data-menu-path="/settings/mcp"]').exists()).toBe(false)
+    appStore.cachedPublicSettings.mcp_enabled = true
+    await flushPromises()
+    expect(menus.sidebar.find('a[href="/settings/mcp"]').exists()).toBe(true)
+    expect(menus.editor.find('[data-menu-path="/settings/mcp"]').exists()).toBe(true)
+    expectSameMenus(menus, section)
+    appStore.cachedPublicSettings.mcp_enabled = false
+    await flushPromises()
+    expect(menus.sidebar.find('a[href="/settings/mcp"]').exists()).toBe(false)
+  })
+
   it.each([
     { subscription: true, balanceDisabled: false, label: 'nav.buySubscription' },
     { subscription: false, balanceDisabled: false, label: 'nav.recharge' },

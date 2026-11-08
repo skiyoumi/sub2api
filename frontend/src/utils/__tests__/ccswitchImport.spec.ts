@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   CC_SWITCH_USAGE_SCRIPT,
+  OPENAI_CC_SWITCH_CODEX_MODEL,
+  GROK_CC_SWITCH_MODEL,
   buildCcSwitchImportDeeplink,
   withoutV1Endpoint,
   type CcSwitchApp
@@ -19,6 +21,42 @@ const baseInput = {
 }
 
 describe('ccswitchImport utils', () => {
+
+  it('uses the upstream default Codex and Grok models', () => {
+    expect(OPENAI_CC_SWITCH_CODEX_MODEL).toBe('gpt-6.1-sol')
+    expect(GROK_CC_SWITCH_MODEL).toBe('grok-4.5')
+  })
+
+  it('embeds Codex authentication, headers, and native web search configuration', () => {
+    const params = paramsFromDeeplink(buildCcSwitchImportDeeplink({ ...baseInput, app: 'codex' }))
+    const payload = JSON.parse(atob(params.get('config') || '')) as { config: string }
+    expect(params.get('configFormat')).toBe('json')
+    expect(payload.config).toContain('base_url = "https://api.example.com/v1"')
+    expect(payload.config).toContain('model = "model-main"')
+    expect(payload.config.split('[model_providers.')[0]).toContain('web_search = "live"')
+    expect(payload.config).toContain('requires_openai_auth = false')
+    expect(payload.config).toContain('experimental_bearer_token = "sk-test"')
+    expect(payload.config).toContain('"x-openai-actor-authorization" = "local-image-extension"')
+    expect(payload.config).not.toContain('[features]')
+  })
+
+  it('encodes embedded Codex configuration as UTF-8 and escapes TOML strings', () => {
+    const apiKey = 'sk-"test\\key'
+    const params = paramsFromDeeplink(buildCcSwitchImportDeeplink({
+      ...baseInput, app: 'codex', apiKey, baseUrl: 'https://example.com/??',
+    }))
+    const bytes = Uint8Array.from(atob(params.get('config') || ''), (char) => char.charCodeAt(0))
+    const payload = JSON.parse(new TextDecoder().decode(bytes)) as { config: string }
+    expect(payload.config).toContain('base_url = "https://example.com/??"')
+    expect(payload.config).toContain(`experimental_bearer_token = ${JSON.stringify(apiKey)}`)
+    expect(params.get('apiKey')).toBe(apiKey)
+  })
+
+  it.each(['claude', 'gemini', 'opencode', 'grokbuild'] as CcSwitchApp[])('omits embedded Codex config for %s', (app) => {
+    const params = paramsFromDeeplink(buildCcSwitchImportDeeplink({ ...baseInput, app }))
+    expect(params.has('config')).toBe(false)
+  })
+
   it.each([
     ['https://api.example.com/v1', 'https://api.example.com'],
     ['https://api.example.com/v1/', 'https://api.example.com'],
