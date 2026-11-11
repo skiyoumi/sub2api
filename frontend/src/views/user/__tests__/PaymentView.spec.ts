@@ -430,12 +430,15 @@ describe('PaymentView subscription plan grid', () => {
 })
 
 describe('PaymentView recharge rate preview', () => {
-  it('uses the selected payment method currency in both locale templates', async () => {
+  it.each([
+    [0.5, '0.50'],
+    [0.140845, '0.140845'],
+  ])('uses the selected payment method currency and preserves multiplier %s in both locale templates', async (multiplier, formatted) => {
     translate.mockClear()
     routeState.path = '/purchase'
     routeState.query = {}
     getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({
-      balance_recharge_multiplier: 0.5,
+      balance_recharge_multiplier: multiplier,
       methods: {
         stripe: {
           ...checkoutInfoFixture().data.methods.wxpay,
@@ -459,7 +462,7 @@ describe('PaymentView recharge rate preview', () => {
 
     expect(translate).toHaveBeenCalledWith('payment.rechargeRatePreview', {
       currency: 'USD',
-      usd: '0.50',
+      usd: formatted,
     })
     expect(en.payment.rechargeRatePreview).toBe('Current rate: 1 {currency} = {usd} USD')
     expect(zh.payment.rechargeRatePreview).toBe('当前倍率：1 {currency} = {usd} USD')

@@ -7,7 +7,7 @@ function savedPricing(disabled?: boolean): ChannelModelPricing {
     platform: 'openai', models: ['gpt-5.4'], billing_mode: 'token',
     ...(disabled === undefined ? {} : { long_context_pricing_disabled: disabled }),
     input_price: 2.5e-6, output_price: 15e-6, cache_write_price: null,
-    cache_write_1h_price: null, reasoning_effort_multipliers: null,
+    cache_write_1h_price: null, cache_write_12h_price: null, reasoning_effort_multipliers: null,
     cache_read_price: 0.25e-6, image_input_price: null, image_output_price: null,
     per_request_price: null, intervals: [], time_pricing: null,
   }
@@ -44,5 +44,15 @@ describe('group model long-context pricing', () => {
     expect(saved.output_price).toBeNull()
     expect(saved.cache_read_price).toBeNull()
     expect(groupPricingFromAPI([saved])[0].long_context_pricing_disabled).toBe(true)
+  })
+
+  it.each([null, 0, 3.75e-6])('preserves the 12-hour cache write price %s together with the long-context override', (price) => {
+    const original = { ...savedPricing(true), cache_write_12h_price: price }
+    const form = groupPricingFromAPI([original])
+    expect(form[0].cache_write_12h_price).toBe(price === null ? null : price * 1e6)
+    expect(form[0].long_context_pricing_disabled).toBe(true)
+    const saved = groupPricingToAPI(form, 'openai')
+    expect(saved).toEqual([original])
+    expect(groupPricingFromAPI(saved)).toEqual(form)
   })
 })
