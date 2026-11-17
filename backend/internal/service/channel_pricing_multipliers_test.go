@@ -297,7 +297,7 @@ func TestCalculateTokenCostCombinesIntervalAndFastMultiplier(t *testing.T) {
 func TestChannelUltrafastMultiplierOverridesModelDefault(t *testing.T) {
 	svc := &BillingService{fallbackPrices: make(map[string]*ModelPricing)}
 	svc.initFallbackPricing()
-	for _, model := range []string{"gpt-6-astra", "gpt-5.5"} {
+	for _, model := range []string{"gpt-6-astra", "gpt-6.1-sol", "gpt-5.5"} {
 		t.Run(model, func(t *testing.T) {
 			base, err := svc.GetModelPricing(model)
 			require.NoError(t, err)
