@@ -45,6 +45,7 @@
                 type="checkbox"
                 class="h-4 w-4 shrink-0 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                 :checked="isGroupSelected(group.id)"
+                :disabled="group.models.length === 0"
                 :aria-label="group.name"
                 @click.stop
                 @change="toggleGroup(group)"
@@ -192,6 +193,7 @@ function isModelSelected(groupId: number, model: string) {
 }
 
 function toggleGroup(group: ModelPlazaGroup) {
+  if (group.models.length === 0) return
   const index = form.groups.findIndex(item => item.group_id === group.id)
   if (index >= 0) form.groups.splice(index, 1)
   else form.groups.push({ group_id: group.id, models: group.models.map(model => model.name) })
@@ -218,6 +220,7 @@ function toggleModel(groupId: number, model: string) {
 }
 
 function selectAllModels(group: ModelPlazaGroup) {
+  if (group.models.length === 0) return
   ensureSelection(group.id).models = group.models.map(model => model.name)
 }
 
@@ -230,13 +233,32 @@ function platformName(platform: string) {
   return platform.charAt(0).toUpperCase() + platform.slice(1)
 }
 
+function normalizeConfig(config: ModelPricingConfig): ModelPricingConfig {
+  const available = new Map(groups.value.map(group => [group.id, new Set(group.models.map(model => model.name))]))
+  const selected = new Map<number, Set<string>>()
+  for (const group of config.groups) {
+    const availableModels = available.get(group.group_id)
+    if (!availableModels) continue
+    const models = selected.get(group.group_id) ?? new Set<string>()
+    for (const name of group.models) {
+      if (availableModels.has(name)) models.add(name)
+    }
+    if (models.size > 0) selected.set(group.group_id, models)
+  }
+  return {
+    enabled: config.enabled,
+    description: config.description,
+    groups: Array.from(selected, ([group_id, models]) => ({ group_id, models: [...models] }))
+  }
+}
+
 async function load() {
   loading.value = true
   try {
     const result = await getModelPricingConfig()
     groups.value = result.groups
-    Object.assign(form, result.config)
-    activeGroupId.value = result.config.groups[0]?.group_id ?? result.groups[0]?.id ?? null
+    Object.assign(form, normalizeConfig(result.config))
+    activeGroupId.value = form.groups[0]?.group_id ?? result.groups[0]?.id ?? null
   } catch {
     appStore.showError(t('admin.modelPricing.loadFailed'))
   } finally {
@@ -247,12 +269,8 @@ async function load() {
 async function save() {
   saving.value = true
   try {
-    const saved = await updateModelPricingConfig({
-      enabled: form.enabled,
-      description: form.description,
-      groups: form.groups.filter(group => group.models.length > 0).map(group => ({ group_id: group.group_id, models: [...group.models] }))
-    })
-    Object.assign(form, saved)
+    const saved = await updateModelPricingConfig(normalizeConfig(form))
+    Object.assign(form, normalizeConfig(saved))
     appStore.showSuccess(t('admin.modelPricing.saveSuccess'))
   } catch {
     appStore.showError(t('admin.modelPricing.saveFailed'))
