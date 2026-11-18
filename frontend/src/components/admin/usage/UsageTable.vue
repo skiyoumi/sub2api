@@ -208,8 +208,9 @@
 
         <template #cell-cost="{ row }">
           <div class="text-sm">
-            <div class="flex items-center gap-1.5">
+            <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1">
               <span class="font-medium text-green-600 dark:text-green-400">${{ row.actual_cost?.toFixed(6) || '0.000000' }}</span>
+              <UsageFastBadge :service-tier="row.service_tier" />
               <span
                 v-if="row.long_context_billing_applied"
                 data-testid="long-context-billing-marker"
@@ -547,6 +548,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import UsageFastBadge from '@/components/common/UsageFastBadge.vue'
 import { useAppStore } from '@/stores/app'
 import { formatDateTime, formatReasoningEffort, reasoningEffortValuesEqual } from '@/utils/format'
 import { formatCacheTokens, formatMultiplier } from '@/utils/formatters'
