@@ -25,6 +25,7 @@ function createEntry(models: string[] = []): PricingFormEntry {
     cache_read_price: null,
     fast_multiplier: null,
     flex_multiplier: null,
+    ultrafast_multiplier: null,
     reasoning_effort_multipliers: null,
     image_input_price: null,
     image_output_price: null,
@@ -50,7 +51,7 @@ const emittedEntries = (wrapper: ReturnType<typeof shallowMount>) =>
 describe('PricingEntryCard service tier multipliers', () => {
   it('edits and clears Ultrafast independently of Fast and Flex', async () => {
     const entry = { ...createEntry(), fast_multiplier: 2.5, ultrafast_multiplier: 4.5, flex_multiplier: 0.5 }
-    const wrapper = shallowMount(PricingEntryCard, { props: { entry, enableTierMultipliers: true } })
+    const wrapper = shallowMount(PricingEntryCard, { props: { entry, platform: 'openai', enableTierMultipliers: true } })
     const input = wrapper.findAll('input[type="number"]').find(input =>
       input.element.parentElement?.textContent?.includes('admin.channels.form.ultrafastMultiplier')
     )!
