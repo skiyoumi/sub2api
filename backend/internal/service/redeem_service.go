@@ -567,17 +567,7 @@ func (s *RedeemService) redeem(ctx context.Context, userID int64, code string, r
 func (s *RedeemService) invalidateRedeemCaches(ctx context.Context, userID int64, redeemCode *RedeemCode) {
 	switch redeemCode.Type {
 	case RedeemTypeBalance:
-		if s.authCacheInvalidator != nil {
-			s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
-		}
-		if s.billingCacheService == nil {
-			return
-		}
-		go func() {
-			cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = s.billingCacheService.InvalidateUserBalance(cacheCtx, userID)
-		}()
+		s.invalidateBalanceCaches(ctx, userID)
 	case RedeemTypeConcurrency:
 		if s.authCacheInvalidator != nil {
 			s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
@@ -600,6 +590,24 @@ func (s *RedeemService) invalidateRedeemCaches(ctx context.Context, userID int64
 				_ = s.billingCacheService.InvalidateSubscription(cacheCtx, userID, groupID)
 			}()
 		}
+	}
+}
+
+// invalidateBalanceCaches runs after a committed deposit, including recovery
+// of an already-applied payment. Finish both invalidations before returning so
+// the next request can reload the credited balance. Request cancellation must
+// not prevent cleanup of money that has already been committed.
+func (s *RedeemService) invalidateBalanceCaches(ctx context.Context, userID int64) {
+	if s == nil {
+		return
+	}
+	cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByUserID(cacheCtx, userID)
+	}
+	if s.billingCacheService != nil {
+		_ = s.billingCacheService.InvalidateUserBalance(cacheCtx, userID)
 	}
 }
 

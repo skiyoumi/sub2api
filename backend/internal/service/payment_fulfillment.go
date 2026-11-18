@@ -432,12 +432,13 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder, l
 		if _, err := s.bonusWallet.GrantForPayment(ctx, BonusGrantInput{
 			UserID: o.UserID, PaymentOrderID: o.ID,
 			PermanentAmount: packageSelection.PermanentAmount,
-			BonusAmount: packageSelection.BonusAmount,
-			ValidityDays: packageSelection.Package.BonusValidityDays,
-			FulfilledAt: time.Now(),
+			BonusAmount:     packageSelection.BonusAmount,
+			ValidityDays:    packageSelection.Package.BonusValidityDays,
+			FulfilledAt:     time.Now(),
 		}); err != nil {
 			return fmt.Errorf("grant payment bonus wallet: %w", err)
 		}
+		s.redeemService.invalidateBalanceCaches(ctx, o.UserID)
 		if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
 			return err
 		}
@@ -457,6 +458,7 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder, l
 
 	switch action {
 	case redeemActionSkipCompleted:
+		s.redeemService.invalidateBalanceCaches(ctx, o.UserID)
 		if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
 			return err
 		}
